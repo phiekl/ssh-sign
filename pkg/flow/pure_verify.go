@@ -1,0 +1,102 @@
+// Copyright 2026 Philip Eklöf
+//
+// SPDX-License-Identifier: MIT
+
+package flow
+
+import (
+	"fmt"
+	"os"
+
+	"golang.org/x/crypto/ssh"
+	"pxy.se/go/ssh-sign/pkg/cli"
+	"pxy.se/go/ssh-sign/pkg/sshsigx"
+)
+
+type PureVerifyOpts struct {
+	AuthKey       string
+	Namespace     string
+	NoAuthKey     bool
+	NoNamespace   bool
+	SignatureFile *os.File
+	VerifyFile    *os.File
+}
+
+type PureVerifyResult struct {
+	Authentication string `json:"authentication"`
+	Namespace      string `json:"namespace"`
+	Verification   string `json:"verification"`
+}
+
+func (r PureVerifyResult) String() string {
+	return cli.ResultFormatKV(
+		r,
+		-15, " ", "= ", "",
+		"authentication", "namespace", "verification",
+	)
+}
+
+func PureVerify(opts *PureVerifyOpts) (*PureVerifyResult, []error) {
+	var errs []error
+	var err error
+	var pk ssh.PublicKey
+
+	if opts.AuthKey == "" && !opts.NoAuthKey {
+		errs = append(errs, fmt.Errorf(
+			"allowed signers disabled, signer authentication enabled, but no auth key provided",
+		))
+	}
+	if opts.Namespace == "" && !opts.NoNamespace {
+		errs = append(errs, fmt.Errorf(
+			"allowed signers disabled, filenamespace verification enabled, but no namespace provided",
+		))
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
+	if !opts.NoAuthKey {
+		pk, err = sshsigx.PublicKeyLineParse(opts.AuthKey)
+		if err != nil {
+			return nil, append(errs, fmt.Errorf("invalid authentication key: %v", err))
+		}
+	}
+
+	sig, err := sshsigx.SignatureRead(opts.SignatureFile)
+	if err != nil {
+		return nil, append(errs, err)
+	}
+
+	res := PureVerifyResult{}
+	if opts.NoAuthKey {
+		res.Authentication = "disabled"
+	} else if sshsigx.PublicKeyEqual(pk, sig.PublicKey) {
+		res.Authentication = "valid"
+	} else {
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf(
+			"signature was created by public key %q (expected %q)",
+			sshsigx.PublicKeyString(sig.PublicKey), sshsigx.PublicKeyString(pk),
+		))
+	}
+
+	if opts.NoNamespace {
+		res.Namespace = "disabled"
+	} else if opts.Namespace == sig.Namespace {
+		res.Namespace = "valid"
+	} else {
+		res.Namespace = "invalid"
+		errs = append(errs, fmt.Errorf(
+			"signature contains namespace %q (expected %q)", sig.Namespace, opts.Namespace,
+		))
+	}
+
+	if err := sshsigx.SignatureVerify(opts.VerifyFile, sig); err == nil {
+		res.Verification = "valid"
+	} else {
+		res.Verification = "invalid"
+		errs = append(errs, err)
+	}
+
+	return &res, errs
+}

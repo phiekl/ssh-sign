@@ -1,0 +1,10 @@
+version = 1
+
+[[annotations]]
+path = [
+  ".gitignore",
+  "go.mod",
+  "go.sum",
+]
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"
