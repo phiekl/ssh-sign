@@ -105,12 +105,12 @@ func (c *VerifyCommand) Args() {
 		"principal", "p", "",
 		"allow this signer (email usually) from allowed signers file",
 	)
-	c.ArgP.StringDenyEmpty(&c.signatureFile, "principal")
+	c.ArgP.StringDenyEmpty(&c.commandOpts.Principal, "principal")
 
 	c.ArgP.StringVarP(
 		&c.timestamp,
 		"timestamp", "t", "",
 		"validate this RFC3339/RFC1123 timestamp rather than current time",
 	)
-	c.ArgP.StringDenyEmpty(&c.signatureFile, "timestamp")
+	c.ArgP.StringDenyEmpty(&c.timestamp, "timestamp")
 }

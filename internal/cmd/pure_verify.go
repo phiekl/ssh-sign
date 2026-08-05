@@ -67,7 +67,7 @@ func (c *PureVerifyCommand) Args() {
 		"signature-file", "s", "",
 		"read signature from file instead of stdin",
 	)
-	c.ArgP.StringDenyEmpty(&c.signatureFile, "verify-file")
+	c.ArgP.StringDenyEmpty(&c.signatureFile, "signature-file")
 
 	c.ArgP.StringVarP(
 		&c.commandOpts.Namespace,
