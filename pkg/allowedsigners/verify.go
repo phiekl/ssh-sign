@@ -25,7 +25,7 @@ func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) 
 	for i := range f.Entries {
 		ent := &f.Entries[i]
 
-		if principal != "" && ent.Principal != principal {
+		if principal != "" && !patternListMatch(ent.Principal, principal) {
 			continue
 		}
 		if !sshsigx.PublicKeyEqual(ent.PublicKey, pk) {

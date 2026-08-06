@@ -70,14 +70,8 @@ func parseLine(n int, line string) (*Entry, error) {
 	if e.Principal == "" {
 		return nil, &ParseError{Line: n, Msg: "empty principal"}
 	}
-	if strings.Contains(e.Principal, ",") {
-		return nil, &ParseError{Line: n, Msg: "comma-separated principals are not supported"}
-	}
-	if strings.Contains(e.Principal, "!") {
-		return nil, &ParseError{Line: n, Msg: "negated principals are not supported"}
-	}
-	if strings.Contains(e.Principal, "*") {
-		return nil, &ParseError{Line: n, Msg: "wildcard principals are not supported"}
+	if err := validatePatternList(e.Principal); err != nil {
+		return nil, &ParseError{Line: n, Msg: fmt.Sprintf("invalid principal pattern-list: %v", err)}
 	}
 
 	keyTypeIdx := 1
