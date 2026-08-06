@@ -41,30 +41,39 @@ func patternListMatch(list, value string) bool {
 
 // wildcardMatch implements the '*' and '?' matching used by OpenSSH. Unlike
 // filesystem globs, '*' also matches path separators.
+//
+// Matching is greedy with a single backtrack point, rather than recursing per
+// '*'. A pattern such as "*a*a*a*a*b" would otherwise take exponential time on
+// a non-matching value, and the value here is the namespace named by the
+// signature under verification.
 func wildcardMatch(pattern, value string) bool {
-	for {
-		if pattern == "" {
-			return value == ""
-		}
-		if pattern[0] == '*' {
-			pattern = strings.TrimLeft(pattern, "*")
-			if pattern == "" {
-				return true
-			}
-			for i := 0; i <= len(value); i++ {
-				if wildcardMatch(pattern, value[i:]) {
-					return true
-				}
-			}
+	var p, v int
+	// star is the pattern index of the most recent '*', and mark how much of
+	// value it has been allowed to consume so far.
+	star, mark := -1, 0
+
+	for v < len(value) {
+		switch {
+		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == value[v]):
+			p++
+			v++
+		case p < len(pattern) && pattern[p] == '*':
+			star = p
+			p++
+			mark = v
+		case star >= 0:
+			// Let the last '*' swallow one more byte and retry from there.
+			p = star + 1
+			mark++
+			v = mark
+		default:
 			return false
 		}
-		if value == "" {
-			return false
-		}
-		if pattern[0] != '?' && pattern[0] != value[0] {
-			return false
-		}
-		pattern = pattern[1:]
-		value = value[1:]
 	}
+
+	// Any trailing '*' can match the empty remainder.
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
 }
