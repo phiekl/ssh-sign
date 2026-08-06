@@ -131,7 +131,7 @@ func parseOptions(s string) (Options, error) {
 		if part == "" {
 			continue
 		}
-		if part == "cert-authority" {
+		if strings.EqualFold(part, "cert-authority") {
 			return o, fmt.Errorf("%q option is not yet supported", part)
 		}
 
@@ -140,7 +140,7 @@ func parseOptions(s string) (Options, error) {
 			return o, fmt.Errorf("unknown option %q", part)
 		}
 
-		key := strings.TrimSpace(k)
+		key := strings.ToLower(strings.TrimSpace(k))
 		val := strings.TrimSpace(v)
 		val, err = unquoteOptionValue(val)
 		if err != nil {
@@ -149,11 +149,10 @@ func parseOptions(s string) (Options, error) {
 
 		switch key {
 		case "namespaces":
+			if err := validatePatternList(val); err != nil {
+				return o, fmt.Errorf("namespaces: invalid pattern-list: %v", err)
+			}
 			for _, ns := range strings.Split(val, ",") {
-				ns = strings.TrimSpace(ns)
-				if ns == "" {
-					return o, fmt.Errorf("namespaces: empty namespace or multiple commas detected")
-				}
 				o.Namespaces = append(o.Namespaces, ns)
 			}
 		case "valid-after":
@@ -267,7 +266,7 @@ func splitOptions(s string) ([]string, error) {
 // tokenIsOption checks if a token looks like an option.
 func tokenIsOption(s string) bool {
 	// This is the only standalone option not containing '='.
-	if s == "cert-authority" {
+	if strings.EqualFold(s, "cert-authority") {
 		return true
 	}
 	// A string that matches [",=] should be an option.
