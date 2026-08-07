@@ -187,17 +187,13 @@ func splitFields(line string) ([]string, error) {
 	}
 
 	inQuote := false
-	escaped := false
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 
-		if escaped {
+		if inQuote && isEscapedQuote(line, i) {
 			b.WriteByte(ch)
-			escaped = false
-			continue
-		}
-		if inQuote && ch == '\\' {
-			escaped = true
+			i++
+			b.WriteByte(line[i])
 			continue
 		}
 		if ch == '"' {
@@ -227,7 +223,6 @@ func splitOptions(s string) ([]string, error) {
 	var out []string
 	var b strings.Builder
 	inQuote := false
-	escaped := false
 
 	flush := func() {
 		out = append(out, b.String())
@@ -236,13 +231,10 @@ func splitOptions(s string) ([]string, error) {
 
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
-		if escaped {
+		if inQuote && isEscapedQuote(s, i) {
 			b.WriteByte(ch)
-			escaped = false
-			continue
-		}
-		if inQuote && ch == '\\' {
-			escaped = true
+			i++
+			b.WriteByte(s[i])
 			continue
 		}
 		if ch == '"' {
@@ -276,6 +268,11 @@ func tokenIsOption(s string) bool {
 	return false
 }
 
+// isEscapedQuote reports whether s[i] is a backslash escaping a quote.
+func isEscapedQuote(s string, i int) bool {
+	return s[i] == '\\' && i+1 < len(s) && s[i+1] == '"'
+}
+
 // unquoteOptionValue removes quoting and unescapes escaped characters in an option value.
 func unquoteOptionValue(s string) (string, error) {
 	s = strings.TrimSpace(s)
@@ -288,8 +285,14 @@ func unquoteOptionValue(s string) (string, error) {
 	if len(s) < 2 || s[len(s)-1] != '"' {
 		return "", fmt.Errorf("unterminated quoted string")
 	}
+
 	inner := s[1 : len(s)-1]
-	inner = strings.ReplaceAll(inner, `\"`, `"`)
-	inner = strings.ReplaceAll(inner, `\\`, `\`)
-	return inner, nil
+	var b strings.Builder
+	for i := 0; i < len(inner); i++ {
+		if isEscapedQuote(inner, i) {
+			i++
+		}
+		b.WriteByte(inner[i])
+	}
+	return b.String(), nil
 }
