@@ -30,7 +30,7 @@ func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) 
 		if !sshsigx.PublicKeyEqual(ent.PublicKey, pk) {
 			continue
 		}
-		if len(ent.Options.Namespaces) > 0 && !patternListMatch(strings.Join(ent.Options.Namespaces, ","), ns) {
+		if len(ent.Options.Namespaces) > 0 && !patternsMatch(ent.Options.Namespaces, ns) {
 			errs = append(errs, fmt.Sprintf("line=%d: namespace mismatch", ent.Line))
 			continue
 		}

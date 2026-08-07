@@ -152,9 +152,7 @@ func parseOptions(s string) (Options, error) {
 			if err := validatePatternList(val); err != nil {
 				return o, fmt.Errorf("namespaces: invalid pattern-list: %v", err)
 			}
-			for _, ns := range strings.Split(val, ",") {
-				o.Namespaces = append(o.Namespaces, ns)
-			}
+			o.Namespaces = append(o.Namespaces, strings.Split(val, ",")...)
 		case "valid-after":
 			t, err := ParseTimestamp(val)
 			if err != nil {

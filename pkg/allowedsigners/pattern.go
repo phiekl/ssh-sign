@@ -20,10 +20,15 @@ func validatePatternList(list string) error {
 }
 
 // patternListMatch reports whether value matches an OpenSSH pattern-list.
-// A negated match takes precedence over any positive match.
 func patternListMatch(list, value string) bool {
+	return patternsMatch(strings.Split(list, ","), value)
+}
+
+// patternsMatch reports whether value matches an already split pattern-list.
+// A negated match takes precedence over any positive match.
+func patternsMatch(patterns []string, value string) bool {
 	matched := false
-	for _, pattern := range strings.Split(list, ",") {
+	for _, pattern := range patterns {
 		negated := strings.HasPrefix(pattern, "!")
 		if negated {
 			pattern = strings.TrimPrefix(pattern, "!")
