@@ -10,20 +10,28 @@ import (
 )
 
 func ParseTimestamp(s string) (time.Time, error) {
-	formats := []string{
+	zonedFormats := []string{
 		time.RFC3339Nano,
 		time.RFC3339,
-		time.DateTime,
-		time.DateOnly,
 		time.RFC1123Z,
 		time.RFC1123,
 	}
 
-	for _, format := range formats {
+	for _, format := range zonedFormats {
 		t, err := time.Parse(format, s)
 		if err == nil {
 			return t, nil
 		}
 	}
+
+	localFormats := []string{time.DateTime, time.DateOnly}
+	for _, format := range localFormats {
+		t, err := time.ParseInLocation(format, s, time.Local)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	formats := append(zonedFormats, localFormats...)
 	return time.Time{}, fmt.Errorf("accepted timestamp formats: %v", formats)
 }
