@@ -50,11 +50,9 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	if err != nil {
 		return nil, append(errs, fmt.Errorf("failed agent connection: %v", err))
 	}
-	defer func() {
-		if err := conn.Close(); err != nil {
-			panic(fmt.Sprintf("failed closing agent connection: %v", err))
-		}
-	}()
+	// A failure to hand back the socket says nothing about the signature that
+	// was already produced, so it is not worth aborting over.
+	defer func() { _ = conn.Close() }()
 
 	signer, err := sshsigx.AgentSigner(agent, pk)
 	if err != nil {
