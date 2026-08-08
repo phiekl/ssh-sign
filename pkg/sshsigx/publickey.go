@@ -68,12 +68,9 @@ type PublicKeyInfo struct {
 
 // NewPublicKeyInfo populates a new PublicKeyInfo.
 func NewPublicKeyInfo(pk ssh.PublicKey) PublicKeyInfo {
-	pk_tokens := strings.Split(PublicKeyString(pk), " ")
-	pk_format, pk_blob := pk_tokens[0], pk_tokens[1]
-
 	return PublicKeyInfo{
-		Format:      pk_format,
-		Blob:        pk_blob,
+		Format:      pk.Type(),
+		Blob:        base64.StdEncoding.EncodeToString(pk.Marshal()),
 		Fingerprint: ssh.FingerprintSHA256(pk),
 	}
 }
