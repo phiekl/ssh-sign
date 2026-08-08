@@ -19,7 +19,7 @@ type ParseError struct {
 }
 
 func (e *ParseError) Error() string {
-	return fmt.Sprintf("line: %d: %s", e.Line, e.Msg)
+	return fmt.Sprintf("line=%d: %s", e.Line, e.Msg)
 }
 
 // Parse reads an allowed signers file from r.
