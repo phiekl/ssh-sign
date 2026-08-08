@@ -16,10 +16,6 @@ import (
 // MatchEntry finds the first entry matching given pubkey and optionally a principal.
 // Any namespace or time restriction defined by the entry will be validated.
 func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) (*Entry, error) {
-	if len(f.Entries) == 0 {
-		return nil, fmt.Errorf("no lines read")
-	}
-
 	var errs []string
 	for i := range f.Entries {
 		ent := &f.Entries[i]
