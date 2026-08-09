@@ -22,6 +22,12 @@ type InspectResult struct {
 func (r InspectResult) String() string {
 	out := ""
 	out += cli.ResultFormatKV(
+		r,
+		-22, " ", "| ", "",
+		"version",
+	)
+	out += "\n"
+	out += cli.ResultFormatKV(
 		r.PublicKey,
 		-22, " ", "| ", "publickey_",
 		"format", "blob", "fingerprint",

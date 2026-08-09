@@ -103,6 +103,7 @@ ErHRKw6biwpo2ZeYpEvmFQAxqn5iFWczak8drGAM
 
 ```
 $ ssh-sign inspect < data.sig
+ version               | 1
  publickey_format      | ssh-ed25519
  publickey_blob        | AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk
  publickey_fingerprint | SHA256:7f4G0lT+fU/dDnPDfQd1wmQVPUxYvZm+ZNQqVJtlqNk
