@@ -5,21 +5,15 @@
 package helper
 
 import (
-	"fmt"
+	"errors"
 	"os"
-	"syscall"
 )
 
+// MarshalOSError reduces a *os.PathError to its underlying cause.
 func MarshalOSError(err error) error {
-	if err == nil {
-		return nil
-	} else if pe, ok := err.(*os.PathError); ok {
-		if errno, ok := pe.Err.(syscall.Errno); ok {
-			return fmt.Errorf("%v", errno.Error())
-		} else {
-			return fmt.Errorf("%v", pe.Err.Error())
-		}
-	} else {
-		return err
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
 	}
+	return err
 }
