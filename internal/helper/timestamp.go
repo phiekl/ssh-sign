@@ -6,6 +6,7 @@ package helper
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -32,6 +33,7 @@ func ParseTimestamp(s string) (time.Time, error) {
 		}
 	}
 
-	formats := append(zonedFormats, localFormats...)
-	return time.Time{}, fmt.Errorf("accepted timestamp formats: %v", formats)
+	return time.Time{}, fmt.Errorf(
+		"accepted timestamp formats: %v", slices.Concat(zonedFormats, localFormats),
+	)
 }
