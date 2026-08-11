@@ -59,7 +59,7 @@ func main() {
 	}
 
 	if err := opts.Command.Run("ssh-sign "+opts.CommandName, opts.CommandOpts); err != nil {
-		die(opts.CommandName, fmt.Errorf("internal error: %v", err))
+		die(opts.CommandName, err)
 	}
 	res := opts.Command.Result()
 
