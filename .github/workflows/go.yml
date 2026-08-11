@@ -13,7 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["1.21", "1.25"]
+        # 1.24 is the minimum go.mod allows; anything older only makes
+        # the toolchain download 1.24 and test nothing new.
+        go-version: ["1.24", "1.26"]
     steps:
       - uses: actions/checkout@v5
 
@@ -22,11 +24,46 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Install dependencies
-        run: go get .
+      - name: Download dependencies
+        run: go mod download
 
       - name: Build
-        run: go build -v ./...
+        run: make build
+
+      - name: Vet
+        run: make vet
 
       - name: Test
-        run: go test -v ./...
+        run: make test
+
+  sbom:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@v0
+        with:
+          syft-version: v1.51.0
+
+      - name: Generate SBOM
+        run: make sbom
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-sign-sbom
+          path: build/ssh-sign.spdx.json
+          if-no-files-found: error
