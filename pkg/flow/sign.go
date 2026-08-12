@@ -7,7 +7,7 @@ package flow
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"github.com/hiddeco/sshsig"
@@ -15,7 +15,7 @@ import (
 )
 
 type SignOpts struct {
-	DataFile  *os.File
+	DataFile  io.Reader
 	SignKey   string
 	Namespace string
 }

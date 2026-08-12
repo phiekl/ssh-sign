@@ -5,14 +5,14 @@
 package flow
 
 import (
-	"os"
+	"io"
 
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/sshsigx"
 )
 
 type InspectOpts struct {
-	SignatureFile *os.File
+	SignatureFile io.Reader
 }
 
 type InspectResult struct {
@@ -49,6 +49,10 @@ func (r InspectResult) String() string {
 
 func Inspect(opts *InspectOpts) (*InspectResult, []error) {
 	var errs []error
+
+	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
+		return nil, append(errs, err)
+	}
 
 	sig, err := sshsigx.SignatureRead(opts.SignatureFile)
 	if err != nil {

@@ -6,7 +6,7 @@ package flow
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"time"
 
 	"pxy.se/go/ssh-sign/pkg/allowedsigners"
@@ -15,11 +15,13 @@ import (
 )
 
 type VerifyOpts struct {
-	AllowedSignersFile *os.File
+	AllowedSignersFile io.Reader
+	Namespace          string
+	NoNamespace        bool
 	Principal          string
-	SignatureFile      *os.File
+	SignatureFile      io.Reader
 	Timestamp          time.Time
-	VerifyFile         *os.File
+	VerifyFile         io.Reader
 }
 
 type VerifyResult struct {

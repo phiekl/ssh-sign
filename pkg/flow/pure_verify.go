@@ -6,7 +6,7 @@ package flow
 
 import (
 	"fmt"
-	"os"
+	"io"
 
 	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -18,8 +18,8 @@ type PureVerifyOpts struct {
 	Namespace     string
 	NoAuthKey     bool
 	NoNamespace   bool
-	SignatureFile *os.File
-	VerifyFile    *os.File
+	SignatureFile io.Reader
+	VerifyFile    io.Reader
 }
 
 type PureVerifyResult struct {
