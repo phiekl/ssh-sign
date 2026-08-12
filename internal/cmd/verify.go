@@ -26,6 +26,16 @@ type VerifyCommand struct {
 }
 
 func (c *VerifyCommand) Command() (any, []error) {
+	if c.timestamp != "" {
+		ts, err := helper.ParseTimestamp(c.timestamp)
+		if err != nil {
+			return nil, []error{
+				fmt.Errorf("invalid timestamp %q: %v", c.timestamp, err),
+			}
+		}
+		c.commandOpts.Timestamp = ts
+	}
+
 	allowedSignersFile, err := os.Open(c.allowedSignersFile)
 	if err != nil {
 		return nil, []error{
@@ -62,16 +72,6 @@ func (c *VerifyCommand) Command() (any, []error) {
 	}
 	defer func() { _ = verifyFile.Close() }()
 	c.commandOpts.VerifyFile = verifyFile
-
-	if c.timestamp != "" {
-		ts, err := helper.ParseTimestamp(c.timestamp)
-		if err != nil {
-			return nil, []error{
-				fmt.Errorf("invalid timestamp %q: %v", c.timestamp, err),
-			}
-		}
-		c.commandOpts.Timestamp = ts
-	}
 
 	return flow.Verify(&c.commandOpts)
 }
