@@ -42,16 +42,15 @@ func (r VerifyResult) String() string {
 func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	var errs []error
 	var err error
-	//var pk ssh.PublicKey
 
-	if opts.AllowedSignersFile == nil {
-		return nil, []error{fmt.Errorf("allowed signers file is required")}
+	if err := requireReader(opts.AllowedSignersFile, "allowed signers file"); err != nil {
+		return nil, []error{err}
 	}
-	if opts.SignatureFile == nil {
-		return nil, []error{fmt.Errorf("signature file is required")}
+	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
+		return nil, []error{err}
 	}
-	if opts.VerifyFile == nil {
-		return nil, []error{fmt.Errorf("verify file is required")}
+	if err := requireReader(opts.VerifyFile, "verify file"); err != nil {
+		return nil, []error{err}
 	}
 	if opts.Timestamp.IsZero() {
 		opts.Timestamp = time.Now()

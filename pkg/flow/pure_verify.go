@@ -41,6 +41,13 @@ func PureVerify(opts *PureVerifyOpts) (*PureVerifyResult, []error) {
 	var err error
 	var pk ssh.PublicKey
 
+	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
+		return nil, []error{err}
+	}
+	if err := requireReader(opts.VerifyFile, "verify file"); err != nil {
+		return nil, []error{err}
+	}
+
 	if opts.AuthKey == "" && !opts.NoAuthKey {
 		errs = append(errs, fmt.Errorf(
 			"allowed signers disabled, signer authentication enabled, but no auth key provided",
