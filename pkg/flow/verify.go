@@ -96,6 +96,12 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			sig.PublicKey, opts.Principal, sig.Namespace, opts.Timestamp,
 		)
 	}
+	// Without an invocation-specific pin, a namespace restriction on the
+	// matched allowed signers entry supplies the designation policy.
+	if opts.Namespace == "" && !opts.NoNamespace && ent != nil &&
+		len(ent.Options.Namespaces) > 0 {
+		res.Designation = "valid"
+	}
 	switch {
 	case err != nil && opts.Principal == "":
 		res.Authentication = "invalid"
