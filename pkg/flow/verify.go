@@ -66,49 +66,52 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		return nil, []error{err}
 	}
 
-	res := VerifyResult{}
+	// Every check below is independent, so all of them run and report, in the
+	// same way pure-verify does. That keeps a partial result available even
+	// when something fails.
+	res := VerifyResult{Namespace: sig.Namespace}
 
-	ent, err := parsed.MatchEntry(sig.PublicKey, opts.Principal, sig.Namespace, opts.Timestamp)
-	if opts.Principal == "" {
-		if err != nil {
-			e := fmt.Errorf(
-				"signer public key found in allowed signers, but failed constraints: %v",
-				err,
-			)
-			return nil, []error{e}
-		}
-		if ent == nil {
-			e := fmt.Errorf(
-				"signer public key not found within allowed signers",
-			)
-			return nil, []error{e}
-		}
+	ent, err := parsed.MatchEntry(
+		sig.PublicKey, opts.Principal, sig.Namespace, opts.Timestamp,
+	)
+	switch {
+	case err != nil && opts.Principal == "":
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf(
+			"signer public key found in allowed signers, but failed constraints: %v", err,
+		))
+	case err != nil:
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf(
+			"principal %q found in allowed signers, but failed constraints: %v",
+			opts.Principal, err,
+		))
+	case ent == nil && opts.Principal == "":
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf("signer public key not found within allowed signers"))
+	case ent == nil:
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf(
+			"principal %q not found within allowed signers", opts.Principal,
+		))
+	case opts.Principal == "":
 		res.Authentication = "disabled"
-	} else {
-		if err != nil {
-			e := fmt.Errorf(
-				"principal %q found in allowed signers, but failed contraints: %v",
-				opts.Principal, err,
-			)
-			return nil, []error{e}
-		}
-		if ent == nil {
-			e := fmt.Errorf(
-				"principal %q not found within allowed signers",
-				opts.Principal,
-			)
-			return nil, []error{e}
-		}
+		// No principal was requested, so the entry's pattern-list is the most
+		// specific identity available.
+		res.Principal = ent.Principal
+	default:
 		res.Authentication = "valid"
+		// ent.Principal is the entry's pattern-list, which may be something
+		// like "*@example.com". Report the identity that was authenticated.
+		res.Principal = opts.Principal
 	}
 
-	if err := sshsigx.SignatureVerify(opts.VerifyFile, sig); err != nil {
-		return nil, []error{err}
+	if err := sshsigx.SignatureVerify(opts.VerifyFile, sig); err == nil {
+		res.Verification = "valid"
+	} else {
+		res.Verification = "invalid"
+		errs = append(errs, err)
 	}
-
-	res.Principal = ent.Principal
-	res.Namespace = sig.Namespace
-	res.Verification = "valid"
 
 	return &res, errs
 }
