@@ -101,6 +101,18 @@ func (c *VerifyCommand) Args() {
 	c.ArgP.StringDenyEmpty(&c.signatureFile, "signature-file")
 
 	c.ArgP.StringVarP(
+		&c.commandOpts.Namespace,
+		"namespace", "n", "",
+		"require a signature with specified namespace",
+	)
+	c.ArgP.BoolVarP(
+		&c.commandOpts.NoNamespace,
+		"no-namespace", "N", false,
+		"ignore the signature namespace and allowed signers namespace restrictions",
+	)
+	c.ArgP.MutuallyExclusive("namespace", "no-namespace")
+
+	c.ArgP.StringVarP(
 		&c.commandOpts.Principal,
 		"principal", "p", "",
 		"allow this signer (email usually) from allowed signers file",

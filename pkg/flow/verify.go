@@ -26,6 +26,7 @@ type VerifyOpts struct {
 
 type VerifyResult struct {
 	Authentication string `json:"authentication"`
+	Designation    string `json:"designation"`
 	Namespace      string `json:"namespace"`
 	Principal      string `json:"principal"`
 	Verification   string `json:"verification"`
@@ -35,7 +36,7 @@ func (r VerifyResult) String() string {
 	return cli.ResultFormatKV(
 		r,
 		-15, " ", "= ", "",
-		"principal", "namespace", "authentication", "verification",
+		"principal", "authentication", "namespace", "designation", "verification",
 	)
 }
 
@@ -71,9 +72,30 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	// when something fails.
 	res := VerifyResult{Namespace: sig.Namespace}
 
-	ent, err := parsed.MatchEntry(
-		sig.PublicKey, opts.Principal, sig.Namespace, opts.Timestamp,
-	)
+	// An explicit namespace is an invocation-specific pin. Without one, the
+	// namespace embedded in the signature is still checked against any policy
+	// on the matched allowed signers entry below.
+	if opts.Namespace == "" {
+		res.Designation = "disabled"
+	} else if opts.Namespace == sig.Namespace {
+		res.Designation = "valid"
+	} else {
+		res.Designation = "invalid"
+		errs = append(errs, fmt.Errorf(
+			"signature contains namespace %q (expected %q)", sig.Namespace, opts.Namespace,
+		))
+	}
+
+	var ent *allowedsigners.Entry
+	if opts.NoNamespace {
+		ent, err = parsed.MatchEntryIgnoringNamespace(
+			sig.PublicKey, opts.Principal, opts.Timestamp,
+		)
+	} else {
+		ent, err = parsed.MatchEntry(
+			sig.PublicKey, opts.Principal, sig.Namespace, opts.Timestamp,
+		)
+	}
 	switch {
 	case err != nil && opts.Principal == "":
 		res.Authentication = "invalid"

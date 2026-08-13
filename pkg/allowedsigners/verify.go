@@ -16,6 +16,21 @@ import (
 // MatchEntry finds the first entry matching given pubkey and optionally a principal.
 // Any namespace or time restriction defined by the entry will be validated.
 func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) (*Entry, error) {
+	return f.matchEntry(pk, principal, ns, ts, true)
+}
+
+// MatchEntryIgnoringNamespace finds the first entry matching the given public
+// key and optional principal, without applying the entry's namespace
+// restriction. Time restrictions are still validated.
+func (f *File) MatchEntryIgnoringNamespace(
+	pk ssh.PublicKey, principal string, ts time.Time,
+) (*Entry, error) {
+	return f.matchEntry(pk, principal, "", ts, false)
+}
+
+func (f *File) matchEntry(
+	pk ssh.PublicKey, principal, ns string, ts time.Time, checkNamespace bool,
+) (*Entry, error) {
 	var errs []string
 	for i := range f.Entries {
 		ent := &f.Entries[i]
@@ -26,7 +41,8 @@ func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) 
 		if !sshsigx.PublicKeyEqual(ent.PublicKey, pk) {
 			continue
 		}
-		if len(ent.Options.Namespaces) > 0 && !patternsMatch(ent.Options.Namespaces, ns) {
+		if checkNamespace && len(ent.Options.Namespaces) > 0 &&
+			!patternsMatch(ent.Options.Namespaces, ns) {
 			errs = append(errs, fmt.Sprintf("line=%d: namespace mismatch", ent.Line))
 			continue
 		}
