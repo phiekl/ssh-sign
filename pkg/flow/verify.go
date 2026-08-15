@@ -68,8 +68,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	}
 
 	// Every check below is independent, so all of them run and report, in the
-	// same way pure-verify does. That keeps a partial result available even
-	// when something fails.
+	// same way check does. That keeps a partial result available even when something fails.
 	res := VerifyResult{Namespace: sig.Namespace}
 
 	// An explicit namespace is an invocation-specific pin. Without one, the

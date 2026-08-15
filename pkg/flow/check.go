@@ -13,7 +13,7 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsigx"
 )
 
-type PureVerifyOpts struct {
+type CheckOpts struct {
 	AuthKey       string
 	Namespace     string
 	NoAuthKey     bool
@@ -22,13 +22,13 @@ type PureVerifyOpts struct {
 	VerifyFile    io.Reader
 }
 
-type PureVerifyResult struct {
+type CheckResult struct {
 	Authentication string `json:"authentication"`
 	Namespace      string `json:"namespace"`
 	Verification   string `json:"verification"`
 }
 
-func (r PureVerifyResult) String() string {
+func (r CheckResult) String() string {
 	return cli.ResultFormatKV(
 		r,
 		-15, " ", "= ", "",
@@ -36,7 +36,7 @@ func (r PureVerifyResult) String() string {
 	)
 }
 
-func PureVerify(opts *PureVerifyOpts) (*PureVerifyResult, []error) {
+func Check(opts *CheckOpts) (*CheckResult, []error) {
 	var errs []error
 	var err error
 	var pk ssh.PublicKey
@@ -74,7 +74,7 @@ func PureVerify(opts *PureVerifyOpts) (*PureVerifyResult, []error) {
 		return nil, append(errs, err)
 	}
 
-	res := PureVerifyResult{}
+	res := CheckResult{}
 	if opts.NoAuthKey {
 		res.Authentication = "disabled"
 	} else if sshsigx.PublicKeyEqual(pk, sig.PublicKey) {

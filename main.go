@@ -49,9 +49,9 @@ func main() {
 	)
 
 	p.Command(
-		"pure-verify",
-		"Verify signed data, with optional public key/namespace validation",
-		&cmd.PureVerifyCommand{GlobalOpts: &opts},
+		"check",
+		"Check signed data, with optional public key/namespace validation",
+		&cmd.CheckCommand{GlobalOpts: &opts},
 	)
 
 	if err := p.ParseCurrentArgs(); err != nil {

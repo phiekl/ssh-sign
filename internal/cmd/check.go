@@ -14,16 +14,16 @@ import (
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
-type PureVerifyCommand struct {
+type CheckCommand struct {
 	argparse.BaseCommand
 	GlobalOpts  *global.GlobalOpts
-	commandOpts flow.PureVerifyOpts
+	commandOpts flow.CheckOpts
 
 	signatureFile string
 	verifyFile    string
 }
 
-func (c *PureVerifyCommand) Command() (any, []error) {
+func (c *CheckCommand) Command() (any, []error) {
 	if c.signatureFile == "" {
 		c.commandOpts.SignatureFile = os.Stdin
 	} else {
@@ -50,10 +50,10 @@ func (c *PureVerifyCommand) Command() (any, []error) {
 	defer func() { _ = f.Close() }()
 	c.commandOpts.VerifyFile = f
 
-	return flow.PureVerify(&c.commandOpts)
+	return flow.Check(&c.commandOpts)
 }
 
-func (c *PureVerifyCommand) Args() {
+func (c *CheckCommand) Args() {
 	c.ArgP.StringVarP(
 		&c.verifyFile,
 		"verify-file", "f", "",
