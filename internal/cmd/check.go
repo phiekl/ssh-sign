@@ -24,6 +24,25 @@ type CheckCommand struct {
 }
 
 func (c *CheckCommand) Command() (any, []error) {
+	if c.commandOpts.NoNamespace {
+		c.commandOpts.Namespace = ""
+	}
+
+	var errs []error
+	if err := flow.CheckAuthKey(
+		c.commandOpts.AuthKey, c.commandOpts.NoAuthKey,
+	); err != nil {
+		errs = append(errs, err)
+	}
+	if err := flow.CheckNamespace(
+		c.commandOpts.Namespace, c.commandOpts.NoNamespace,
+	); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
 	if c.signatureFile == "" {
 		c.commandOpts.SignatureFile = os.Stdin
 	} else {

@@ -48,15 +48,11 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		return nil, []error{err}
 	}
 
-	if opts.AuthKey == "" && !opts.NoAuthKey {
-		errs = append(errs, fmt.Errorf(
-			"allowed signers disabled, signer authentication enabled, but no auth key provided",
-		))
+	if err := CheckAuthKey(opts.AuthKey, opts.NoAuthKey); err != nil {
+		errs = append(errs, err)
 	}
-	if opts.Namespace == "" && !opts.NoNamespace {
-		errs = append(errs, fmt.Errorf(
-			"allowed signers disabled, filenamespace verification enabled, but no namespace provided",
-		))
+	if err := CheckNamespace(opts.Namespace, opts.NoNamespace); err != nil {
+		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return nil, errs

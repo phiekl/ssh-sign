@@ -53,6 +53,14 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	if err := requireReader(opts.VerifyFile, "verify file"); err != nil {
 		return nil, []error{err}
 	}
+	// Unlike check, verify may defer namespace validation to the allowed
+	// signers file by leaving both options unset. An explicit waiver remains
+	// mutually exclusive with an explicit namespace pin.
+	if opts.Namespace != "" || opts.NoNamespace {
+		if err := CheckNamespace(opts.Namespace, opts.NoNamespace); err != nil {
+			return nil, []error{err}
+		}
+	}
 	if opts.Timestamp.IsZero() {
 		opts.Timestamp = time.Now()
 	}
