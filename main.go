@@ -58,7 +58,14 @@ func main() {
 		die("usage", err)
 	}
 
-	if err := opts.Command.Run("ssh-sign "+opts.CommandName, opts.CommandOpts); err != nil {
+	commandOpts := opts.CommandOpts
+	if len(commandOpts) == 0 {
+		// argparse displays help before validating required flags when it gets
+		// no tokens. An option terminator lets normal validation report which
+		// command flags are missing instead.
+		commandOpts = []string{"--"}
+	}
+	if err := opts.Command.Run("ssh-sign "+opts.CommandName, commandOpts); err != nil {
 		die(opts.CommandName, err)
 	}
 	res := opts.Command.Result()
