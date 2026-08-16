@@ -24,7 +24,7 @@ type CheckOpts struct {
 
 type CheckResult struct {
 	Authentication string `json:"authentication"`
-	Namespace      string `json:"namespace"`
+	Designation    string `json:"designation"`
 	Verification   string `json:"verification"`
 }
 
@@ -32,7 +32,7 @@ func (r CheckResult) String() string {
 	return cli.ResultFormatKV(
 		r,
 		-15, " ", "= ", "",
-		"authentication", "namespace", "verification",
+		"authentication", "designation", "verification",
 	)
 }
 
@@ -84,11 +84,11 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	}
 
 	if opts.NoNamespace {
-		res.Namespace = "disabled"
+		res.Designation = "disabled"
 	} else if opts.Namespace == sig.Namespace {
-		res.Namespace = "valid"
+		res.Designation = "valid"
 	} else {
-		res.Namespace = "invalid"
+		res.Designation = "invalid"
 		errs = append(errs, fmt.Errorf(
 			"signature contains namespace %q (expected %q)", sig.Namespace, opts.Namespace,
 		))
