@@ -90,7 +90,7 @@ func (c *CheckCommand) Args() {
 
 	c.ArgP.StringVarP(
 		&c.commandOpts.Namespace,
-		"namespace", "n", "",
+		"namespace", "n", "file",
 		"require a signature with specified namespace",
 	)
 	c.ArgP.BoolVarP(
