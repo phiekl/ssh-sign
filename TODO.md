@@ -21,4 +21,4 @@ SPDX-License-Identifier: MIT
 - [ ] Makefile
 - [ ] landlock
 - [ ] seccomp
-- [ ] tests + github action
+- [x] tests + github action
