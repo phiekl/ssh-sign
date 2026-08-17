@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"pxy.se/go/argparse"
 	"pxy.se/go/ssh-sign/internal/cmd"
@@ -54,8 +55,14 @@ func main() {
 		&cmd.CheckCommand{GlobalOpts: &opts},
 	)
 
-	if err := p.ParseCurrentArgs(); err != nil {
-		die("usage", err)
+	args := os.Args[1:]
+	if len(args) == 0 {
+		// argparse prints help and exits directly when it receives no arguments,
+		// which prevents the caller from using the documented usage-error status.
+		args = []string{"--"}
+	}
+	if err := p.ParseArgs(args); err != nil {
+		dieUsage("usage", err)
 	}
 
 	commandOpts := opts.CommandOpts
@@ -66,7 +73,10 @@ func main() {
 		commandOpts = []string{"--"}
 	}
 	if err := opts.Command.Run("ssh-sign "+opts.CommandName, commandOpts); err != nil {
-		die(opts.CommandName, err)
+		if commandRunInternalError(err) {
+			die(opts.CommandName, err)
+		}
+		dieUsage(opts.CommandName, err)
 	}
 	res := opts.Command.Result()
 
@@ -91,8 +101,22 @@ func main() {
 }
 
 func die(prefix string, errs ...error) {
+	reportErrors(prefix, errs...)
+	os.Exit(1)
+}
+
+func dieUsage(prefix string, errs ...error) {
+	reportErrors(prefix, errs...)
+	os.Exit(2)
+}
+
+func reportErrors(prefix string, errs ...error) {
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "error: %s: %v\n", prefix, err)
 	}
-	os.Exit(1)
+}
+
+func commandRunInternalError(err error) bool {
+	return err.Error() == "command implementation not set" ||
+		strings.HasPrefix(err.Error(), "command result capture:")
 }
