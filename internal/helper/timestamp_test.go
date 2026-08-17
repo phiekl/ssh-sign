@@ -5,6 +5,7 @@
 package helper
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,5 +39,23 @@ func TestParseTimestampPreservesExplicitZone(t *testing.T) {
 	_, offset := parsed.Zone()
 	if offset != 0 {
 		t.Errorf("ParseTimestamp() offset = %d, want 0", offset)
+	}
+}
+
+func TestParseTimestampRFC1123Zones(t *testing.T) {
+	for _, input := range []string{
+		"Thu, 15 Jan 2026 00:00:00 UTC",
+		"Thu, 15 Jan 2026 00:00:00 GMT",
+		"Thu, 15 Jan 2026 00:00:00 +0200",
+	} {
+		if _, err := ParseTimestamp(input); err != nil {
+			t.Errorf("ParseTimestamp(%q) error = %v", input, err)
+		}
+	}
+
+	const ambiguous = "Thu, 15 Jan 2026 00:00:00 EST"
+	if _, err := ParseTimestamp(ambiguous); err == nil ||
+		!strings.Contains(err.Error(), "ambiguous RFC1123 timezone") {
+		t.Errorf("ParseTimestamp(%q) error = %v, want an ambiguous-zone error", ambiguous, err)
 	}
 }

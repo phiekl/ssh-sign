@@ -7,6 +7,7 @@ package helper
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -15,7 +16,6 @@ func ParseTimestamp(s string) (time.Time, error) {
 		time.RFC3339Nano,
 		time.RFC3339,
 		time.RFC1123Z,
-		time.RFC1123,
 	}
 
 	for _, format := range zonedFormats {
@@ -23,6 +23,16 @@ func ParseTimestamp(s string) (time.Time, error) {
 		if err == nil {
 			return t, nil
 		}
+	}
+	if t, err := time.Parse(time.RFC1123, s); err == nil {
+		fields := strings.Fields(s)
+		zone := fields[len(fields)-1]
+		if zone != "UTC" && zone != "GMT" {
+			return time.Time{}, fmt.Errorf(
+				"ambiguous RFC1123 timezone %q; use a numeric offset, UTC, or GMT", zone,
+			)
+		}
+		return t, nil
 	}
 
 	localFormats := []string{time.DateTime, time.DateOnly}
@@ -34,6 +44,7 @@ func ParseTimestamp(s string) (time.Time, error) {
 	}
 
 	return time.Time{}, fmt.Errorf(
-		"accepted timestamp formats: %v", slices.Concat(zonedFormats, localFormats),
+		"accepted timestamp formats: %v",
+		slices.Concat(zonedFormats, []string{time.RFC1123}, localFormats),
 	)
 }
