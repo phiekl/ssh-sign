@@ -17,6 +17,7 @@ SPDX-License-Identifier: MIT
 - [ ] verify: JSON input?
 - [ ] verify: Colorized output?
 - [ ] verify: agent/daemon mode that could be run isolated?
+- [ ] verify: Support `cert-authority` entries, currently a hard parse error.
 - [ ] Makefile
 - [ ] landlock
 - [ ] seccomp

@@ -27,6 +27,35 @@ itself (thanks!), since SSHSIG is not supported by `golang.org/x/crypto` yet.
 > You should probably not use it for anything important.
 
 
+## Exit status
+
+`ssh-sign` exits `0` when the command succeeds, `1` on runtime errors and `2`
+on user errors such as bad usage.
+
+However, with JSON output enabled, runtime errors are reported in the `error`
+JSON key, and the return code remains `0`.
+
+
+## Result fields
+
+`verify` and `check` report each checked value next to the outcome of
+checking it.
+
+| field | meaning |
+| --- | --- |
+| `principal` | the identity the signer was pinned to with `-p` (`verify` only) |
+| `authentication` | outcome of that pinning: `valid`, `invalid` or `disabled` |
+| `namespace` | the namespace the signature carries (`verify` only; use `inspect` under `check`) |
+| `designation` | outcome of checking the namespace against `-n` or allowed signers: `valid`, `invalid` or `disabled` |
+| `verification` | outcome of the cryptographic check: `valid` or `invalid` |
+
+`disabled` means no value was required, or the check was waived with `-N` or
+`-K`. For `verify`, a matching `namespaces=` restriction in the allowed signers
+file reports `designation` as `valid` even when `-n` is omitted. For
+`authentication`, `disabled` means no `-p` was given; `verify` still requires a
+matching allowed signers entry.
+
+
 ## Main command
 
 ```
@@ -37,7 +66,7 @@ commands:
   inspect       Show signature details
   sign          Sign data with specified public key and namespace
   verify        Verify signed data using allowed signers files
-  pure-verify   Verify signed data, with optional public key/namespace validation
+  check         Verify signed data, with optional public key/namespace validation
 
 options:
   -h, --help   display this help text and exit
@@ -134,16 +163,16 @@ Alternatively with JSON output via e.g. `ssh-sign -j inspect -s data.sig`:
 ```
 
 
-### Pure verify
+### Check
 
-`pure-verify` verifies signatures without requiring an allowed signers file.
+`check` verifies signatures without requiring an allowed signers file.
 
 #### Options
 
 ```
   -f, --verify-file string      read data to verify from file (required)
   -s, --signature-file string   read signature from file instead of stdin
-  -n, --namespace string        require a signature with specified namespace
+  -n, --namespace string        require a signature with specified namespace (default "file")
   -N, --no-namespace            accept a signature with any namespace
   -k, --auth-key string         require a signature created by specified public key
   -K, --no-auth-key             accept a signature created by any public key
@@ -152,21 +181,21 @@ Alternatively with JSON output via e.g. `ssh-sign -j inspect -s data.sig`:
 #### Example
 
 ```
-ssh-sign pure-verify -f data -s data.sig -KN
+ssh-sign check -f data -s data.sig -KN
  authentication = disabled
- namespace      = disabled
+ designation    = disabled
  verification   = valid
-$ ssh-sign pure-verify -f data -s data.sig -Kn file
+$ ssh-sign check -f data -s data.sig -Kn file
  authentication = disabled
- namespace      = valid
+ designation    = valid
  verification   = valid
-$ ssh-sign pure-verify -f data -s data.sig -k AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk -n file
+$ ssh-sign check -f data -s data.sig -k AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk -n file
  authentication = valid
- namespace      = valid
+ designation    = valid
  verification   = valid
-$ ssh-sign pure-verify -f data -s data.sig -k AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS0abc -n abc
-error: pure-verify: signature was created by public key "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk" (expected "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS0abc")
-error: pure-verify: signature contains namespace "file" (expected "abc")
+$ ssh-sign check -f data -s data.sig -k AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS0abc -n abc
+error: check: signature was created by public key "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk" (expected "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS0abc")
+error: check: signature contains namespace "file" (expected "abc")
 ```
 
 Enabling JSON output for the last one gives:
@@ -178,7 +207,7 @@ Enabling JSON output for the last one gives:
   ],
   "result": {
     "authentication": "invalid",
-    "namespace": "invalid",
+    "designation": "invalid",
     "verification": "valid"
   }
 }
@@ -195,62 +224,85 @@ Enabling JSON output for the last one gives:
   -a, --allowed-signers-file string   read allowed signers, with options, from file (required)
   -f, --verify-file string            read data to verify from file (required)
   -s, --signature-file string         read signature from file instead of stdin
+  -n, --namespace string              require a signature with specified namespace
+  -N, --no-namespace                  ignore the signature namespace and allowed signers namespace restrictions
   -p, --principal string              allow this signer (email usually) from allowed signers file
   -t, --timestamp string              validate this RFC3339/RFC1123 timestamp rather than current time
 ```
+
+> [!IMPORTANT]
+> Without either option, `verify` accepts the namespace carried by the signature
+> while enforcing any `namespaces=` restriction in the matching allowed signers
+> entry. This is suitable when the allowed signers file is the namespace policy.
+>
+> Use `-n` when the verification has an independently known namespace, such as
+> an application protocol. `-N` is a complete waiver: it also ignores namespace
+> restrictions in the allowed signers file. Key, principal and time restrictions
+> are still enforced.
+
+> [!NOTE]
+> `authentication` reports on pinning the signer to one identity with `-p`, so
+> `disabled` means no `-p` was given, not that nothing was checked: `verify`
+> always has to find the signer in the allowed signers file, and reports failing
+> that as `invalid`. Without `-p`, `principal` reports the pattern-list of the
+> entry that matched.
 
 #### Example
 
 ```
 $ echo 'test1@localhost ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk' > allowed_signers
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data < data.sig
+$ ssh-sign verify -a allowed_signers -f data < data.sig
  principal      = test1@localhost
- namespace      = file
  authentication = disabled
- verification   = valid
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data -p test1@localhost < data.sig
- principal      = test1@localhost
  namespace      = file
- authentication = valid
+ designation    = disabled
  verification   = valid
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data -p test2@localhost < data.sig
+$ ssh-sign verify -a allowed_signers -f data -n file -p test1@localhost < data.sig
+ principal      = test1@localhost
+ authentication = valid
+ namespace      = file
+ designation    = valid
+ verification   = valid
+$ ssh-sign verify -a allowed_signers -f data -n file -p test2@localhost < data.sig
 error: verify: principal "test2@localhost" not found within allowed signers
 ```
 
 ```
 $ echo 'test1@localhost ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS0abc' > allowed_signers
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data < data.sig
+$ ssh-sign verify -a allowed_signers -f data < data.sig
 error: verify: signer public key not found within allowed signers
 ```
 
 ```
 $ echo 'test1@localhost namespaces="abc" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk' > allowed_signers
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data -p test1@localhost < data.sig
-error: verify: principal "test1@localhost" found in allowed signers, but failed contraints: line=1: namespace mismatch
+$ ssh-sign verify -a allowed_signers -f data -p test1@localhost < data.sig
+error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: line=1: namespace mismatch
 ```
 
 ```
 $ echo 'test1@localhost namespaces="file",valid-after="20260101",valid-before="20260201" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk' > allowed_signers
 $ date
 Tue Feb  3 22:49:14 UTC 2026
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data -p test1@localhost < data.sig
-error: verify: principal "test1@localhost" found in allowed signers, but failed contraints: line=1: expired
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data -p test1@localhost -t 2026-01-15 < data.sig
+$ ssh-sign verify -a allowed_signers -f data -p test1@localhost < data.sig
+error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: line=1: expired
+$ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2026-01-15 < data.sig
  principal      = test1@localhost
- namespace      = file
  authentication = valid
+ namespace      = file
+ designation    = valid
  verification   = valid
-$ ssh-sign verify -f allowed_signers -a allowed_signers -f data -p test1@localhost -t 2025-12-31 < data.sig
-error: verify: principal "test1@localhost" found in allowed signers, but failed contraints: line=1: not yet valid
+$ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2025-12-31 < data.sig
+error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: line=1: not yet valid
 ```
 
-JSON output for a successful verification:
+JSON output for a successful verification with `-n file`:
 ```json
 {
   "result": {
+    "principal": "test1@localhost",
     "authentication": "valid",
     "namespace": "file",
-    "principal": "test1@localhost",
+    "designation": "valid",
     "verification": "valid"
   }
 }
