@@ -54,6 +54,9 @@ func SignatureRead(in io.Reader) (*sshsig.Signature, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unarmoring data failed: %v", err)
 	}
+	if sig.Namespace == "" {
+		return nil, fmt.Errorf("signature namespace is empty")
+	}
 
 	return sig, nil
 }
