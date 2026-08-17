@@ -5,7 +5,9 @@
 package sshsigx
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"strings"
@@ -50,7 +52,29 @@ func SignatureRead(in io.Reader) (*sshsig.Signature, error) {
 		return nil, fmt.Errorf("read data exceeds %d bytes", max)
 	}
 
-	sig, err := sshsig.Unarmor(data)
+	const armorHeader = "-----BEGIN SSH SIGNATURE-----"
+	if !bytes.HasPrefix(data, []byte(armorHeader)) {
+		return nil, fmt.Errorf("unarmoring data failed: signature does not start with %q", armorHeader)
+	}
+
+	block, rest := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("unarmoring data failed: invalid PEM block")
+	}
+	if block.Type != sshsig.PEMType {
+		return nil, fmt.Errorf(
+			"unarmoring data failed: invalid PEM type %q: expected %q",
+			block.Type, sshsig.PEMType,
+		)
+	}
+	if len(block.Headers) != 0 {
+		return nil, fmt.Errorf("unarmoring data failed: PEM headers are not allowed")
+	}
+	if len(rest) != 0 {
+		return nil, fmt.Errorf("unarmoring data failed: data found after signature")
+	}
+
+	sig, err := sshsig.ParseSignature(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("unarmoring data failed: %v", err)
 	}
