@@ -7,6 +7,7 @@ package sshsigx
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/pem"
 	"strings"
 	"testing"
 
@@ -74,6 +75,16 @@ func TestSignatureRead(t *testing.T) {
 		t.Fatalf("SignatureCreate() error = %v", err)
 	}
 	armored := string(sshsig.Armor(sig))
+	block, _ := pem.Decode([]byte(armored))
+	var wire signatureWire
+	if err := ssh.Unmarshal(block.Bytes, &wire); err != nil {
+		t.Fatalf("unmarshaling signature wire data: %v", err)
+	}
+	wire.Reserved = "future use"
+	nonEmptyReserved := string(pem.EncodeToMemory(&pem.Block{
+		Type:  sshsig.PEMType,
+		Bytes: ssh.Marshal(&wire),
+	}))
 
 	tests := map[string]struct {
 		input   string
@@ -81,6 +92,9 @@ func TestSignatureRead(t *testing.T) {
 	}{
 		"empty":       {input: "", wantErr: "no data read"},
 		"not armored": {input: "hello\n", wantErr: "unarmoring data failed"},
+		"non-empty reserved field": {
+			input: nonEmptyReserved, wantErr: "reserved field is not empty",
+		},
 		// The reader caps input well above the largest signature ssh-keygen
 		// produces, so an oversized one is refused rather than buffered.
 		"too large": {input: armored + strings.Repeat("x", 8192), wantErr: "exceeds 8192 bytes"},

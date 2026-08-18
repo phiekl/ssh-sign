@@ -16,6 +16,16 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+type signatureWire struct {
+	MagicPreamble [6]byte
+	Version       uint32
+	PublicKey     string
+	Namespace     string
+	Reserved      string
+	HashAlgorithm string
+	Signature     string
+}
+
 // SignatureCreate creates a signature of the input data.
 func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signature, error) {
 	sig, err := sshsig.Sign(in, signer, sshsig.HashSHA512, ns)
@@ -77,6 +87,13 @@ func SignatureRead(in io.Reader) (*sshsig.Signature, error) {
 	sig, err := sshsig.ParseSignature(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("unarmoring data failed: %v", err)
+	}
+	var wire signatureWire
+	if err := ssh.Unmarshal(block.Bytes, &wire); err != nil {
+		return nil, fmt.Errorf("unarmoring data failed: %v", err)
+	}
+	if wire.Reserved != "" {
+		return nil, fmt.Errorf("signature reserved field is not empty")
 	}
 	if sig.Namespace == "" {
 		return nil, fmt.Errorf("signature namespace is empty")
