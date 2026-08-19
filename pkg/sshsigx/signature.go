@@ -26,6 +26,11 @@ type signatureWire struct {
 	Signature     string
 }
 
+// maxSignatureArmorSize bounds malformed or hostile input while leaving ample
+// room for certificate-backed signatures. It matches OpenSSH's hard sshbuf
+// ceiling, which also bounds the armored signature buffer read by ssh-keygen.
+const maxSignatureArmorSize = 0x8000000
+
 // SignatureCreate creates a signature of the input data.
 func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signature, error) {
 	sig, err := sshsig.Sign(in, signer, sshsig.HashSHA512, ns)
@@ -37,28 +42,17 @@ func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signat
 
 // SignatureRead unarmors a signature from the input data.
 func SignatureRead(in io.Reader) (*sshsig.Signature, error) {
-	// Reading at most 8192 bytes of data should be more than fine.
-	// Some stats on running `ssh-keygen -Y sign` 1000 times per
-	// keytype/bitsize (\n newlines):
-	//
-	// ed25519     -  = 294B
-	//   ecdsa  256b  = 387-391B
-	//   ecdsa  384b  = 472-476B
-	//   ecdsa  521b  = 570-574B
-	//     rsa  2048b = 866B
-	//     rsa  3072b = 1211B
-	//     rsa  4096b = 1556B
-	//     rsa  8192b = 2943B
-	//     rsa 16384b = 5710B
-	const max = 8192
+	return signatureRead(in, maxSignatureArmorSize)
+}
 
+func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 	data, err := io.ReadAll(io.LimitReader(in, max+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) == 0 {
 		return nil, fmt.Errorf("no data read")
-	} else if len(data) > max {
+	} else if int64(len(data)) > max {
 		return nil, fmt.Errorf("read data exceeds %d bytes", max)
 	}
 

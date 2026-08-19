@@ -88,6 +88,7 @@ func TestSignatureRead(t *testing.T) {
 
 	tests := map[string]struct {
 		input   string
+		max     int64
 		wantErr string
 	}{
 		"empty":       {input: "", wantErr: "no data read"},
@@ -95,14 +96,22 @@ func TestSignatureRead(t *testing.T) {
 		"non-empty reserved field": {
 			input: nonEmptyReserved, wantErr: "reserved field is not empty",
 		},
-		// The reader caps input well above the largest signature ssh-keygen
-		// produces, so an oversized one is refused rather than buffered.
-		"too large": {input: armored + strings.Repeat("x", 8192), wantErr: "exceeds 8192 bytes"},
+		// Oversized input is refused rather than buffered without bound.
+		"too large": {
+			input:   armored + strings.Repeat("x", 8192),
+			max:     8192,
+			wantErr: "exceeds 8192 bytes",
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := SignatureRead(strings.NewReader(tt.input))
+			var err error
+			if tt.max == 0 {
+				_, err = SignatureRead(strings.NewReader(tt.input))
+			} else {
+				_, err = signatureRead(strings.NewReader(tt.input), tt.max)
+			}
 			if err == nil {
 				t.Fatalf("SignatureRead() error = nil, want %q", tt.wantErr)
 			}
