@@ -129,7 +129,7 @@ func parseOptions(s string) (Options, error) {
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
-			continue
+			return o, fmt.Errorf("empty option")
 		}
 		if strings.EqualFold(part, "cert-authority") {
 			return o, fmt.Errorf("%q option is not yet supported", part)
@@ -149,17 +149,26 @@ func parseOptions(s string) (Options, error) {
 
 		switch key {
 		case "namespaces":
+			if o.Namespaces != nil {
+				return o, fmt.Errorf("multiple %q clauses", key)
+			}
 			if err := validatePatternList(val); err != nil {
 				return o, fmt.Errorf("namespaces: invalid pattern-list: %v", err)
 			}
 			o.Namespaces = append(o.Namespaces, strings.Split(val, ",")...)
 		case "valid-after":
+			if o.ValidAfter != nil {
+				return o, fmt.Errorf("multiple %q clauses", key)
+			}
 			t, err := ParseTimestamp(val)
 			if err != nil {
 				return o, fmt.Errorf("valid-after: %w", err)
 			}
 			o.ValidAfter = &t
 		case "valid-before":
+			if o.ValidBefore != nil {
+				return o, fmt.Errorf("multiple %q clauses", key)
+			}
 			t, err := ParseTimestamp(val)
 			if err != nil {
 				return o, fmt.Errorf("valid-before: %w", err)
@@ -168,6 +177,9 @@ func parseOptions(s string) (Options, error) {
 		default:
 			return o, fmt.Errorf("unsupported option %q", k)
 		}
+	}
+	if o.ValidAfter != nil && o.ValidBefore != nil && !o.ValidBefore.After(*o.ValidAfter) {
+		return o, fmt.Errorf("%q time is not after %q", "valid-before", "valid-after")
 	}
 	return o, nil
 }
