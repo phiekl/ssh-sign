@@ -7,6 +7,7 @@ package sshsigx
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/pem"
 	"strings"
 	"testing"
@@ -47,6 +48,63 @@ func TestSignatureRoundTrip(t *testing.T) {
 	}
 	if err := SignatureVerify(strings.NewReader(data), read); err != nil {
 		t.Errorf("SignatureVerify() error = %v, want nil", err)
+	}
+}
+
+func newRSACertificateSigner(t *testing.T) ssh.Signer {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating RSA key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatalf("creating RSA signer: %v", err)
+	}
+	ca := newSigner(t)
+	cert := &ssh.Certificate{
+		Key:         signer.PublicKey(),
+		CertType:    ssh.UserCert,
+		KeyId:       "test",
+		ValidBefore: ssh.CertTimeInfinity,
+	}
+	if err := cert.SignCert(rand.Reader, ca); err != nil {
+		t.Fatalf("signing certificate: %v", err)
+	}
+	certSigner, err := ssh.NewCertSigner(cert, signer)
+	if err != nil {
+		t.Fatalf("creating certificate signer: %v", err)
+	}
+	return certSigner
+}
+
+func TestSignatureCreateUsesSHA2ForRSACertificate(t *testing.T) {
+	sig, err := SignatureCreate(
+		newRSACertificateSigner(t), "file", strings.NewReader("data\n"),
+	)
+	if err != nil {
+		t.Fatalf("SignatureCreate() error = %v", err)
+	}
+	if sig.Signature.Format != ssh.KeyAlgoRSASHA512 {
+		t.Errorf("signature format = %q, want %q", sig.Signature.Format, ssh.KeyAlgoRSASHA512)
+	}
+}
+
+func TestSignatureReadRejectsSHA1ForRSACertificate(t *testing.T) {
+	sig, err := sshsig.Sign(
+		strings.NewReader("data\n"), newRSACertificateSigner(t), sshsig.HashSHA512, "file",
+	)
+	if err != nil {
+		t.Fatalf("creating legacy certificate signature: %v", err)
+	}
+	if sig.Signature.Format != ssh.KeyAlgoRSA {
+		t.Fatalf("legacy signature format = %q, want %q", sig.Signature.Format, ssh.KeyAlgoRSA)
+	}
+
+	_, err = SignatureRead(strings.NewReader(string(sshsig.Armor(sig))))
+	if err == nil || !strings.Contains(err.Error(), "invalid RSA signature format") {
+		t.Fatalf("SignatureRead() error = %v, want an invalid RSA signature format error", err)
 	}
 }
 
