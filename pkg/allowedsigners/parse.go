@@ -64,15 +64,26 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 
 // parseLine parses a single line fed from an allowed signers file.
 func parseLine(n int, line string) (*Entry, error) {
-	fields, err := splitFields(line)
+	head, _, err := splitFields(line, 2)
 	if err != nil {
 		return nil, &ParseError{Line: n, Msg: err.Error()}
 	}
-	if len(fields) < 3 {
+	if len(head) < 2 {
 		return nil, &ParseError{
 			Line: n,
 			Msg:  "expected at least 3 fields: principals [options] type key",
 		}
+	}
+	fieldCount := 3
+	if tokenIsOption(head[1]) {
+		fieldCount = 4
+	}
+	fields, comment, err := splitFields(line, fieldCount)
+	if err != nil {
+		return nil, &ParseError{Line: n, Msg: err.Error()}
+	}
+	if len(fields) < fieldCount {
+		return nil, &ParseError{Line: n, Msg: "missing type/key fields"}
 	}
 
 	e := &Entry{Line: n, Raw: line}
@@ -119,9 +130,7 @@ func parseLine(n int, line string) (*Entry, error) {
 	}
 	e.PublicKey = pk
 
-	if len(fields) > keyTypeIdx+2 {
-		e.Comment = strings.Join(fields[keyTypeIdx+2:], " ")
-	}
+	e.Comment = comment
 	return e, nil
 }
 
@@ -195,16 +204,19 @@ func parseOptions(s string) (Options, error) {
 	return o, nil
 }
 
-// splitFields splits on spaces/tabs, but keeps quoted substrings together.
-func splitFields(line string) ([]string, error) {
+// splitFields returns at most limit whitespace-separated fields, keeping quoted
+// substrings together. Once the limit is reached, the remainder is returned
+// without interpreting it so an opaque key comment cannot affect parsing.
+func splitFields(line string, limit int) ([]string, string, error) {
 	var out []string
 	var b strings.Builder
 
-	flush := func() {
+	flush := func() bool {
 		if b.Len() > 0 {
 			out = append(out, b.String())
 			b.Reset()
 		}
+		return len(out) == limit
 	}
 
 	inQuote := false
@@ -223,20 +235,23 @@ func splitFields(line string) ([]string, error) {
 			continue
 		}
 		if !inQuote && (ch == ' ' || ch == '\t') {
-			flush()
+			complete := flush()
 			// consume additional whitespace
 			for i+1 < len(line) && (line[i+1] == ' ' || line[i+1] == '\t') {
 				i++
+			}
+			if complete {
+				return out, line[i+1:], nil
 			}
 			continue
 		}
 		b.WriteByte(ch)
 	}
 	if inQuote {
-		return nil, fmt.Errorf("unterminated quote")
+		return nil, "", fmt.Errorf("unterminated quote")
 	}
 	flush()
-	return out, nil
+	return out, "", nil
 }
 
 // splitOptions splits on comma, while ignoring quoted commas.

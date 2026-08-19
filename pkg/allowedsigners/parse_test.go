@@ -82,6 +82,14 @@ func TestParseEntryFields(t *testing.T) {
 	}
 }
 
+func TestParseTreatsTrailingCommentAsOpaque(t *testing.T) {
+	f := parseLines(t, "alice@example.com "+testKey+` owner "unfinished comment`)
+
+	if got, want := f.Entries[0].Comment, `owner "unfinished comment`; got != want {
+		t.Errorf("Comment = %q, want %q", got, want)
+	}
+}
+
 func TestParseOptions(t *testing.T) {
 	tests := []struct {
 		name    string
