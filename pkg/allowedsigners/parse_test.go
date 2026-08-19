@@ -41,6 +41,29 @@ func TestParseSkipsBlankAndCommentLines(t *testing.T) {
 	}
 }
 
+func TestParseAllowsLinesLargerThanTwoMiB(t *testing.T) {
+	comment := "#" + strings.Repeat("x", 2*1024*1024)
+	f := parseLines(t, comment, "alice@example.com "+testKey)
+	if len(f.Entries) != 1 {
+		t.Fatalf("len(Entries) = %d, want 1", len(f.Entries))
+	}
+}
+
+func TestParseAllowsAnUnterminatedLineAtTheLimit(t *testing.T) {
+	const limit = 64
+	comment := "#" + strings.Repeat("x", limit-1)
+	f, err := parseWithMaxLineSize(strings.NewReader(comment), limit)
+	if err != nil {
+		t.Fatalf("parseWithMaxLineSize() error = %v", err)
+	}
+	if len(f.Entries) != 0 {
+		t.Fatalf("len(Entries) = %d, want 0", len(f.Entries))
+	}
+	if _, err := parseWithMaxLineSize(strings.NewReader(comment+"x"), limit); err == nil {
+		t.Fatal("parseWithMaxLineSize() error = nil for a line over the limit")
+	}
+}
+
 func TestParseEntryFields(t *testing.T) {
 	f := parseLines(t, "alice@example.com "+testKey+"  trailing comment")
 

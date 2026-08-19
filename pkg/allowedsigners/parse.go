@@ -13,6 +13,10 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsigx"
 )
 
+// maxLineSize matches OpenSSH's SSHBUF_SIZE_MAX. Certificate-backed entries
+// and their comments can be much larger than ordinary public-key lines.
+const maxLineSize = 0x8000000
+
 type ParseError struct {
 	Line int
 	Msg  string
@@ -24,8 +28,15 @@ func (e *ParseError) Error() string {
 
 // Parse reads an allowed signers file from r.
 func Parse(r io.Reader) (*File, error) {
+	return parseWithMaxLineSize(r, maxLineSize)
+}
+
+func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+	// Scanner may need to buffer the line delimiter (or probe for EOF) in
+	// addition to the token itself.
+	bufferSize := min(64*1024, maxLineSize+1)
+	sc.Buffer(make([]byte, 0, bufferSize), maxLineSize+1)
 
 	var f File
 	n := 0
