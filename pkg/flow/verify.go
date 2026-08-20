@@ -64,8 +64,9 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			return nil, []error{err}
 		}
 	}
-	if opts.Timestamp.IsZero() {
-		opts.Timestamp = time.Now()
+	timestamp := opts.Timestamp
+	if timestamp.IsZero() {
+		timestamp = time.Now()
 	}
 
 	parsed, err := allowedsigners.Parse(opts.AllowedSignersFile)
@@ -99,11 +100,11 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	var ent *allowedsigners.Entry
 	if opts.NoNamespace {
 		ent, err = parsed.MatchEntryIgnoringNamespace(
-			sig.PublicKey, opts.Principal, opts.Timestamp,
+			sig.PublicKey, opts.Principal, timestamp,
 		)
 	} else {
 		ent, err = parsed.MatchEntry(
-			sig.PublicKey, opts.Principal, sig.Namespace, opts.Timestamp,
+			sig.PublicKey, opts.Principal, sig.Namespace, timestamp,
 		)
 	}
 	// Without an invocation-specific pin, a namespace restriction on the

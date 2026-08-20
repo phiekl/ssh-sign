@@ -82,6 +82,18 @@ func TestVerifySucceeds(t *testing.T) {
 	}
 }
 
+func TestVerifyDoesNotSetDefaultTimestamp(t *testing.T) {
+	s := sign(t, "git")
+	opts := s.verifyOpts("alice@example.com "+s.keyLine+"\n", "git")
+
+	if _, errs := Verify(opts); len(errs) != 0 {
+		t.Fatalf("Verify() errors = %v, want none", errs)
+	}
+	if !opts.Timestamp.IsZero() {
+		t.Errorf("Verify() set options timestamp to %v", opts.Timestamp)
+	}
+}
+
 func TestVerifyAcceptsAnUnpinnedNamespace(t *testing.T) {
 	s := sign(t, "git")
 
