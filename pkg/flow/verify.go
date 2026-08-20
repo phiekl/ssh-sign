@@ -108,9 +108,19 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	}
 	// Without an invocation-specific pin, a namespace restriction on the
 	// matched allowed signers entry supplies the designation policy.
-	if opts.Namespace == "" && !opts.NoNamespace && ent != nil &&
-		len(ent.Options.Namespaces) > 0 {
-		res.Designation = "valid"
+	if opts.Namespace == "" && !opts.NoNamespace {
+		switch {
+		case ent != nil && len(ent.Options.Namespaces) > 0:
+			res.Designation = "valid"
+		case ent == nil:
+			if checked, matched := allowedsigners.NamespaceConstraintResult(err); checked {
+				if matched {
+					res.Designation = "valid"
+				} else {
+					res.Designation = "invalid"
+				}
+			}
+		}
 	}
 	switch {
 	case err != nil && opts.Principal == "":

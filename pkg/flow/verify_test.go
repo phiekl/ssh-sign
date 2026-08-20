@@ -116,7 +116,7 @@ func TestVerifyUsesAllowedSignersNamespaceByDefault(t *testing.T) {
 	if !strings.Contains(errorText(errs), "namespace mismatch") {
 		t.Fatalf("Verify() errors = %v, want an allowed signers namespace mismatch", errs)
 	}
-	if res.Authentication != "invalid" || res.Designation != "disabled" {
+	if res.Authentication != "invalid" || res.Designation != "invalid" {
 		t.Errorf("Verify() = %+v, want policy rejection without a namespace pin", res)
 	}
 }
