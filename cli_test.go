@@ -456,6 +456,40 @@ func TestInspectTextAndJSONAgreeOnFields(t *testing.T) {
 	}
 }
 
+func TestOutputWriteFailureIsReported(t *testing.T) {
+	f := newFixture(t, "file")
+
+	for _, jsonMode := range []bool{false, true} {
+		name := "text"
+		args := []string{"inspect", "-s", f.signature}
+		if jsonMode {
+			name = "json"
+			args = append([]string{"-j"}, args...)
+		}
+		t.Run(name, func(t *testing.T) {
+			full, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+			if err != nil {
+				t.Skipf("cannot open /dev/full: %v", err)
+			}
+			defer func() { _ = full.Close() }()
+
+			var stderr bytes.Buffer
+			command := exec.Command(binary, args...)
+			command.Stdout = full
+			command.Stderr = &stderr
+			err = command.Run()
+
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+				t.Fatalf("exit error = %v, want status 1", err)
+			}
+			if !strings.Contains(stderr.String(), "failed writing output") {
+				t.Errorf("stderr = %q, want an output-write error", stderr.String())
+			}
+		})
+	}
+}
+
 func TestVerifyReportsPrincipalPinningAsDisabledWithoutAPrincipal(t *testing.T) {
 	f := newFixture(t, "file")
 

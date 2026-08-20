@@ -85,7 +85,9 @@ func main() {
 		if err != nil {
 			die(opts.CommandName, err)
 		}
-		fmt.Printf("%s\n", out)
+		if _, err := fmt.Printf("%s\n", out); err != nil {
+			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
+		}
 		// With JSON output, the error key should be used instead of checking rc.
 		os.Exit(0)
 	}
@@ -94,7 +96,9 @@ func main() {
 		die(opts.CommandName, res.Error...)
 	}
 	if res.Data != nil {
-		fmt.Printf("%s\n", res.Data)
+		if _, err := fmt.Printf("%s\n", res.Data); err != nil {
+			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
+		}
 	}
 	os.Exit(0)
 
