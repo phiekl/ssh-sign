@@ -40,6 +40,9 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	var errs []error
 	var err error
 	var pk ssh.PublicKey
+	if opts == nil {
+		return nil, []error{fmt.Errorf("options are required")}
+	}
 
 	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
 		return nil, []error{err}

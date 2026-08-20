@@ -43,6 +43,9 @@ func (r VerifyResult) String() string {
 func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	var errs []error
 	var err error
+	if opts == nil {
+		return nil, []error{fmt.Errorf("options are required")}
+	}
 
 	if err := requireReader(opts.AllowedSignersFile, "allowed signers file"); err != nil {
 		return nil, []error{err}

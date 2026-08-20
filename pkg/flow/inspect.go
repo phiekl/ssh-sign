@@ -5,6 +5,7 @@
 package flow
 
 import (
+	"fmt"
 	"io"
 
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -49,6 +50,9 @@ func (r InspectResult) String() string {
 
 func Inspect(opts *InspectOpts) (*InspectResult, []error) {
 	var errs []error
+	if opts == nil {
+		return nil, []error{fmt.Errorf("options are required")}
+	}
 
 	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
 		return nil, append(errs, err)

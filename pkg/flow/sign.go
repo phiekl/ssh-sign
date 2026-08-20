@@ -40,6 +40,9 @@ func (r SignResult) String() string {
 
 func Sign(opts *SignOpts) (*SignResult, []error) {
 	var errs []error
+	if opts == nil {
+		return nil, []error{fmt.Errorf("options are required")}
+	}
 
 	if err := requireReader(opts.DataFile, "data file"); err != nil {
 		return nil, append(errs, err)
