@@ -122,6 +122,14 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			}
 		}
 	}
+	// With -n, the signature namespace must match both the requested namespace
+	// and any namespaces= restriction in the allowed signers entry. Report it
+	// as invalid if the allowed signers restriction rejects it, even when -n matched.
+	if opts.Namespace != "" && !opts.NoNamespace {
+		if checked, matched := allowedsigners.NamespaceConstraintResult(err); checked && !matched {
+			res.Designation = "invalid"
+		}
+	}
 	switch {
 	case err != nil && opts.Principal == "":
 		res.Authentication = "invalid"

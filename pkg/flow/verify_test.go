@@ -121,6 +121,22 @@ func TestVerifyUsesAllowedSignersNamespaceByDefault(t *testing.T) {
 	}
 }
 
+func TestVerifyCombinesExplicitAndAllowedSignersNamespaces(t *testing.T) {
+	s := sign(t, "git")
+	allowed := `alice@example.com namespaces="email" ` + s.keyLine + "\n"
+
+	res, errs := Verify(s.verifyOpts(allowed, "git"))
+	if !strings.Contains(errorText(errs), "namespace mismatch") {
+		t.Fatalf("Verify() errors = %v, want an allowed signers namespace mismatch", errs)
+	}
+	if res.Designation != "invalid" {
+		t.Errorf("Designation = %q, want %q", res.Designation, "invalid")
+	}
+	if res.Verification != "valid" {
+		t.Errorf("Verification = %q, want %q", res.Verification, "valid")
+	}
+}
+
 func TestVerifyNoNamespaceWaivesAllowedSignersRestriction(t *testing.T) {
 	s := sign(t, "git")
 	allowed := `alice@example.com namespaces="email" ` + s.keyLine + "\n"
