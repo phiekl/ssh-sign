@@ -7,6 +7,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -91,7 +92,7 @@ func main() {
 		if err != nil {
 			die(opts.CommandName, err)
 		}
-		if _, err := fmt.Printf("%s\n", out); err != nil {
+		if err := writeOutput(os.Stdout, string(out)); err != nil {
 			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
 		}
 		// With JSON output, the error key should be used instead of checking rc.
@@ -102,12 +103,24 @@ func main() {
 		die(opts.CommandName, res.Error...)
 	}
 	if res.Data != nil {
-		if _, err := fmt.Printf("%s\n", res.Data); err != nil {
+		if err := writeOutput(os.Stdout, fmt.Sprint(res.Data)); err != nil {
 			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
 		}
 	}
 	os.Exit(0)
 
+}
+
+func writeOutput(w io.Writer, value string) error {
+	output := value + "\n"
+	n, err := io.WriteString(w, output)
+	if err != nil {
+		return err
+	}
+	if n != len(output) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func die(prefix string, errs ...error) {

@@ -42,7 +42,7 @@ func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signat
 	}
 	sig, err := sshsig.Sign(in, signer, sshsig.HashSHA512, ns)
 	if err != nil {
-		return nil, fmt.Errorf("signing failed: %v", err)
+		return nil, fmt.Errorf("signing failed: %w", err)
 	}
 	return sig, nil
 }
@@ -136,7 +136,7 @@ func SignatureVerify(in io.Reader, sig *sshsig.Signature) error {
 		if strings.HasPrefix(err.Error(), "ssh: ") {
 			return fmt.Errorf("%s", strings.TrimPrefix(err.Error(), "ssh: "))
 		}
-		return fmt.Errorf("unexpected verification failure: %v", err)
+		return fmt.Errorf("unexpected verification failure: %w", err)
 	}
 	return nil
 }
