@@ -13,6 +13,7 @@ import (
 	"pxy.se/go/argparse"
 	"pxy.se/go/ssh-sign/internal/cmd"
 	"pxy.se/go/ssh-sign/internal/global"
+	"pxy.se/go/ssh-sign/pkg/cli"
 )
 
 func main() {
@@ -79,6 +80,11 @@ func main() {
 		dieUsage(opts.CommandName, err)
 	}
 	res := opts.Command.Result()
+	for _, err := range res.Error {
+		if cli.IsUsageError(err) {
+			dieUsage(opts.CommandName, res.Error...)
+		}
+	}
 
 	if opts.JSON {
 		out, err := json.MarshalIndent(res, "", "  ")

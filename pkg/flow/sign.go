@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/hiddeco/sshsig"
+	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/sshsigx"
 )
 
@@ -50,7 +51,7 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 
 	pk, err := sshsigx.PublicKeyLineParse(opts.SignKey)
 	if err != nil {
-		return nil, append(errs, fmt.Errorf("invalid signing key: %v", err))
+		return nil, append(errs, cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err)))
 	}
 
 	conn, agent, err := sshsigx.AgentConnect()

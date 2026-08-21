@@ -400,6 +400,53 @@ func TestUsageErrorsAreNotLabelledInternal(t *testing.T) {
 	}
 }
 
+func TestSemanticUsageErrorsExitTwo(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "invalid timestamp",
+			args: []string{"verify", "-a", "/missing", "-f", "/missing", "-t", "nonsense"},
+			want: "invalid timestamp",
+		},
+		{
+			name: "missing authentication decision",
+			args: []string{"check", "-f", "/missing", "-N"},
+			want: "no auth key provided",
+		},
+		{
+			name: "invalid signing key",
+			args: []string{"sign", "-k", "nonsense"},
+			want: "invalid signing key",
+		},
+	}
+
+	for _, tt := range tests {
+		for _, jsonMode := range []bool{false, true} {
+			name := "text"
+			args := tt.args
+			if jsonMode {
+				name = "json"
+				args = append([]string{"-j"}, args...)
+			}
+			t.Run(tt.name+"/"+name, func(t *testing.T) {
+				stdout, stderr, code := run(t, args...)
+				if code != 2 {
+					t.Errorf("exit status = %d, want 2", code)
+				}
+				if stdout != "" {
+					t.Errorf("stdout = %q, want empty", stdout)
+				}
+				if !strings.Contains(stderr, tt.want) {
+					t.Errorf("stderr = %q, want %q", stderr, tt.want)
+				}
+			})
+		}
+	}
+}
+
 func TestVerifyReportsPartialResultOnFailure(t *testing.T) {
 	f := newFixture(t, "file")
 	tampered := filepath.Join(f.dir, "tampered")
@@ -544,7 +591,7 @@ func TestCheck(t *testing.T) {
 		{
 			name:     "no key decision",
 			args:     []string{"-N"},
-			wantCode: 1,
+			wantCode: 2,
 			wantErr:  "no auth key provided",
 		},
 	}

@@ -11,6 +11,7 @@ import (
 	"pxy.se/go/argparse"
 	"pxy.se/go/ssh-sign/internal/global"
 	"pxy.se/go/ssh-sign/internal/helper"
+	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
@@ -30,7 +31,7 @@ func (c *VerifyCommand) Command() (any, []error) {
 		ts, err := helper.ParseTimestamp(c.timestamp)
 		if err != nil {
 			return nil, []error{
-				fmt.Errorf("invalid timestamp %q: %v", c.timestamp, err),
+				cli.MarkUsage(fmt.Errorf("invalid timestamp %q: %v", c.timestamp, err)),
 			}
 		}
 		c.commandOpts.Timestamp = ts

@@ -11,6 +11,7 @@ import (
 	"pxy.se/go/argparse"
 	"pxy.se/go/ssh-sign/internal/global"
 	"pxy.se/go/ssh-sign/internal/helper"
+	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
@@ -32,12 +33,12 @@ func (c *CheckCommand) Command() (any, []error) {
 	if err := flow.CheckAuthKey(
 		c.commandOpts.AuthKey, c.commandOpts.NoAuthKey,
 	); err != nil {
-		errs = append(errs, err)
+		errs = append(errs, cli.MarkUsage(err))
 	}
 	if err := flow.CheckNamespace(
 		c.commandOpts.Namespace, c.commandOpts.NoNamespace,
 	); err != nil {
-		errs = append(errs, err)
+		errs = append(errs, cli.MarkUsage(err))
 	}
 	if len(errs) > 0 {
 		return nil, errs
