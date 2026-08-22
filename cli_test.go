@@ -447,6 +447,21 @@ func TestSemanticUsageErrorsExitTwo(t *testing.T) {
 	}
 }
 
+func TestSignValidatesKeyBeforeOpeningDataFile(t *testing.T) {
+	_, stderr, code := run(t,
+		"sign", "-k", "nonsense", "-f", filepath.Join(t.TempDir(), "missing"),
+	)
+	if code != 2 {
+		t.Errorf("exit status = %d, want 2", code)
+	}
+	if !strings.Contains(stderr, "invalid signing key") {
+		t.Errorf("stderr = %q, want an invalid signing key error", stderr)
+	}
+	if strings.Contains(stderr, "failed to open data file") {
+		t.Errorf("stderr = %q, input was opened before validating the key", stderr)
+	}
+}
+
 func TestVerifyReportsPartialResultOnFailure(t *testing.T) {
 	f := newFixture(t, "file")
 	tampered := filepath.Join(f.dir, "tampered")

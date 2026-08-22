@@ -11,6 +11,7 @@ import (
 	"pxy.se/go/argparse"
 	"pxy.se/go/ssh-sign/internal/global"
 	"pxy.se/go/ssh-sign/internal/helper"
+	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
@@ -23,6 +24,10 @@ type SignCommand struct {
 }
 
 func (c *SignCommand) Command() (any, []error) {
+	if err := flow.CheckSignKey(c.commandOpts.SignKey); err != nil {
+		return nil, []error{cli.MarkUsage(err)}
+	}
+
 	if c.dataFile == "" {
 		c.commandOpts.DataFile = os.Stdin
 	} else {

@@ -35,3 +35,10 @@ func CheckAuthKey(authKey string, noAuthKey bool) error {
 	}
 	return nil
 }
+
+func CheckSignKey(signKey string) error {
+	if _, err := sshsigx.PublicKeyLineParse(signKey); err != nil {
+		return fmt.Errorf("invalid signing key: %v", err)
+	}
+	return nil
+}
