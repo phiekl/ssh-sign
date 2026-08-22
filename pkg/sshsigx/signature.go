@@ -33,7 +33,7 @@ const maxSignatureArmorSize = 0x8000000
 
 // SignatureCreate creates a signature of the input data.
 func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signature, error) {
-	if publicKeyType(signer.PublicKey()) == ssh.KeyAlgoRSA {
+	if isRSACertificate(signer.PublicKey()) {
 		algorithmSigner, ok := signer.(ssh.AlgorithmSigner)
 		if !ok {
 			return nil, fmt.Errorf("signing failed: RSA signer does not support selecting a SHA-2 algorithm")
@@ -42,6 +42,9 @@ func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signat
 	}
 	sig, err := sshsig.Sign(in, signer, sshsig.HashSHA512, ns)
 	if err != nil {
+		return nil, fmt.Errorf("signing failed: %w", err)
+	}
+	if err := validateSignatureAlgorithm(sig); err != nil {
 		return nil, fmt.Errorf("signing failed: %w", err)
 	}
 	return sig, nil
@@ -99,16 +102,23 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 	if sig.Namespace == "" {
 		return nil, fmt.Errorf("signature namespace is empty")
 	}
+	if err := validateSignatureAlgorithm(sig); err != nil {
+		return nil, err
+	}
+
+	return sig, nil
+}
+
+func validateSignatureAlgorithm(sig *sshsig.Signature) error {
 	if publicKeyType(sig.PublicKey) == ssh.KeyAlgoRSA &&
 		sig.Signature.Format != ssh.KeyAlgoRSASHA256 &&
 		sig.Signature.Format != ssh.KeyAlgoRSASHA512 {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid RSA signature format %q: expected %q or %q",
 			sig.Signature.Format, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512,
 		)
 	}
-
-	return sig, nil
+	return nil
 }
 
 // rsaSHA512Signer preserves a certificate public key while ensuring that the
@@ -127,6 +137,11 @@ func publicKeyType(pk ssh.PublicKey) string {
 		return cert.Key.Type()
 	}
 	return pk.Type()
+}
+
+func isRSACertificate(pk ssh.PublicKey) bool {
+	cert, ok := pk.(*ssh.Certificate)
+	return ok && cert.Key.Type() == ssh.KeyAlgoRSA
 }
 
 // SignatureVerify checks if a signature verifies to the input data. It does
