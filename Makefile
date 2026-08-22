@@ -8,7 +8,7 @@ SBOM := $(BINARY).spdx.json
 GOAMD64 ?= v3
 SYFT ?= syft
 
-.PHONY: all build sbom test vet clean
+.PHONY: all build sbom test fuzz vet clean
 
 all: test vet build
 
@@ -22,6 +22,12 @@ sbom: build
 
 test:
 	go test ./...
+
+FUZZTIME ?= 10s
+fuzz:
+	go test ./pkg/sshsigx -run '^$$' -fuzz '^FuzzSignatureRead$$' -fuzztime=$(FUZZTIME) -parallel=2
+	go test ./pkg/allowedsigners -run '^$$' -fuzz '^FuzzParse$$' -fuzztime=$(FUZZTIME) -parallel=2
+	go test ./pkg/allowedsigners -run '^$$' -fuzz '^FuzzWildcardMatch$$' -fuzztime=$(FUZZTIME) -parallel=2
 
 vet:
 	go vet ./...
