@@ -6,16 +6,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
@@ -48,11 +51,15 @@ func TestMain(m *testing.M) {
 
 // run executes ssh-sign with the given arguments and empty stdin.
 func run(t *testing.T, args ...string) (stdout, stderr string, code int) {
+	return runWithInput(t, "", args...)
+}
+
+func runWithInput(t *testing.T, input string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 
 	var outBuf, errBuf bytes.Buffer
 	c := exec.Command(binary, args...)
-	c.Stdin = strings.NewReader("")
+	c.Stdin = strings.NewReader(input)
 	c.Stdout = &outBuf
 	c.Stderr = &errBuf
 
@@ -549,6 +556,108 @@ func TestOutputWriteFailureIsReported(t *testing.T) {
 				t.Errorf("stderr = %q, want an output-write error", stderr.String())
 			}
 		})
+	}
+}
+
+func TestBrokenPipeDoesNotExitSuccessfully(t *testing.T) {
+	f := newFixture(t, "file")
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating pipe: %v", err)
+	}
+	_ = reader.Close()
+	defer func() { _ = writer.Close() }()
+
+	command := exec.Command(binary, "inspect", "-s", f.signature)
+	command.Stdout = writer
+	if err := command.Run(); err == nil {
+		t.Fatal("inspect exited successfully after writing to a broken pipe")
+	}
+}
+
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) {
+	return len(p) / 2, nil
+}
+
+func TestWriteOutputRejectsShortWrite(t *testing.T) {
+	if err := writeOutput(shortWriter{}, "result"); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("writeOutput() error = %v, want io.ErrShortWrite", err)
+	}
+}
+
+func TestCommandStdinPaths(t *testing.T) {
+	key := startAgent(t)
+	f := newFixture(t, "file")
+	const data = "data supplied through stdin\n"
+
+	armored, stderr, code := runWithInput(t, data, "sign", "-k", key, "-n", "file")
+	if code != 0 {
+		t.Fatalf("sign from stdin: code=%d stderr=%q", code, stderr)
+	}
+	if stdout, stderr, code := runWithInput(t, armored, "inspect"); code != 0 ||
+		!strings.Contains(stdout, "namespace             | file") {
+		t.Fatalf("inspect from stdin: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	dataPath := filepath.Join(f.dir, "stdin-data")
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("writing data: %v", err)
+	}
+	if stdout, stderr, code := runWithInput(t, armored,
+		"check", "-f", dataPath, "-k", key, "-n", "file",
+	); code != 0 || !strings.Contains(stdout, "verification   = valid") {
+		t.Fatalf("check signature from stdin: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	writeAllowedSigner(t, f.allowed, f.principal, key)
+	if stdout, stderr, code := runWithInput(t, armored,
+		"verify", "-a", f.allowed, "-f", dataPath, "-p", f.principal, "-n", "file",
+	); code != 0 || !strings.Contains(stdout, "verification   = valid") {
+		t.Fatalf("verify signature from stdin: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestSignValidatesKeyBeforeOpeningFIFO(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "data.fifo")
+	mkfifo, err := exec.LookPath("mkfifo")
+	if err != nil {
+		t.Skip("mkfifo is not installed")
+	}
+	if out, err := exec.Command(mkfifo, "-m", "600", fifo).CombinedOutput(); err != nil {
+		t.Skipf("cannot create FIFO: %v: %s", err, out)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, binary, "sign", "-k", "nonsense", "-f", fifo)
+	out, err := command.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatal("sign blocked opening the FIFO before validating its key")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("exit error = %v, output=%q, want status 2", err, out)
+	}
+	if !strings.Contains(string(out), "invalid signing key") {
+		t.Errorf("output = %q, want an invalid signing key error", out)
+	}
+}
+
+func TestLargeInputRoundTrip(t *testing.T) {
+	key := startAgent(t)
+	data := strings.Repeat("0123456789abcdef", 256*1024)
+	armored, stderr, code := runWithInput(t, data, "sign", "-k", key, "-n", "file")
+	if code != 0 {
+		t.Fatalf("signing large stdin: code=%d stderr=%q", code, stderr)
+	}
+	dataPath := filepath.Join(t.TempDir(), "large-data")
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("writing large data: %v", err)
+	}
+	if stdout, stderr, code := runWithInput(t, armored,
+		"check", "-f", dataPath, "-k", key, "-n", "file",
+	); code != 0 || !strings.Contains(stdout, "verification   = valid") {
+		t.Fatalf("checking large data: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }
 
