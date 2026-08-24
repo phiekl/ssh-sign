@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/hiddeco/sshsig v0.2.0
 	golang.org/x/crypto v0.47.0
-	pxy.se/go/argparse v0.1.7-0.20260112223357-b63c363053e4
+	pxy.se/go/argparse v0.1.7
 )
 
 require (

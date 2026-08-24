@@ -57,13 +57,8 @@ func main() {
 		&cmd.CheckCommand{GlobalOpts: &opts},
 	)
 
-	args := os.Args[1:]
-	if len(args) == 0 {
-		// argparse prints help and exits directly when it receives no arguments,
-		// which prevents the caller from using the documented usage-error status.
-		args = []string{"--"}
-	}
-	if err := p.ParseArgs(args); err != nil {
+	if err := p.ParseCurrentArgs(); err != nil {
+		exitForParserSentinel(err)
 		dieUsage("usage", err)
 	}
 
@@ -75,6 +70,7 @@ func main() {
 		commandOpts = []string{"--"}
 	}
 	if err := opts.Command.Run("ssh-sign "+opts.CommandName, commandOpts); err != nil {
+		exitForParserSentinel(err)
 		if commandRunInternalError(err) {
 			die(opts.CommandName, err)
 		}
@@ -109,6 +105,15 @@ func main() {
 	}
 	os.Exit(0)
 
+}
+
+func exitForParserSentinel(err error) {
+	switch err {
+	case argparse.ErrHelp:
+		os.Exit(0)
+	case argparse.ErrUsage:
+		os.Exit(2)
+	}
 }
 
 func writeOutput(w io.Writer, value string) error {

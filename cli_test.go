@@ -204,6 +204,35 @@ func TestHelpListsPublicCommands(t *testing.T) {
 	}
 }
 
+func TestMissingCommandShowsUsage(t *testing.T) {
+	stdout, stderr, code := run(t)
+	if code != 2 {
+		t.Fatalf("exit status = %d, want 2 (stdout: %s, stderr: %s)", code, stdout, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want it empty", stdout)
+	}
+	if !strings.Contains(stderr, "usage: ssh-sign") {
+		t.Errorf("stderr = %q, want command usage", stderr)
+	}
+	if strings.Contains(stderr, "missing arguments") {
+		t.Errorf("stderr = %q, want no parser sentinel", stderr)
+	}
+}
+
+func TestCommandHelpExitsSuccessfully(t *testing.T) {
+	stdout, stderr, code := run(t, "sign", "--help")
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "usage: ssh-sign sign") {
+		t.Errorf("stdout = %q, want sign usage", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty", stderr)
+	}
+}
+
 func TestSignProducesAVerifiableSignature(t *testing.T) {
 	key := startAgent(t)
 	dir := t.TempDir()
