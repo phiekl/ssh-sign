@@ -91,7 +91,9 @@ func main() {
 		if err := writeOutput(os.Stdout, string(out)); err != nil {
 			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
 		}
-		// With JSON output, the error key should be used instead of checking rc.
+		if len(res.Error) > 0 {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 

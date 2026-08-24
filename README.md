@@ -32,8 +32,8 @@ itself (thanks!), since SSHSIG is not supported by `golang.org/x/crypto` yet.
 `ssh-sign` exits `0` when the command succeeds, `1` on runtime errors and `2`
 on user errors such as bad usage.
 
-However, with JSON output enabled, runtime errors are reported in the `error`
-JSON key, and the return code remains `0`.
+In JSON mode, runtime errors are written to stdout under `error` before exiting
+`1`.
 
 
 ## Result fields

@@ -261,7 +261,7 @@ func TestSignProducesAVerifiableSignature(t *testing.T) {
 	}
 }
 
-func TestJSONFailureKeepsZeroExitStatus(t *testing.T) {
+func TestJSONFailureExitsNonZero(t *testing.T) {
 	f := newFixture(t, "file")
 	tampered := filepath.Join(f.dir, "tampered")
 	if err := os.WriteFile(tampered, []byte("goodbye\n"), 0o600); err != nil {
@@ -271,8 +271,8 @@ func TestJSONFailureKeepsZeroExitStatus(t *testing.T) {
 	stdout, stderr, code := run(t,
 		"-j", "verify", "-a", f.allowed, "-f", tampered, "-s", f.signature, "-n", "file",
 	)
-	if code != 0 {
-		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	if code != 1 {
+		t.Fatalf("exit status = %d, want 1 (stderr: %s)", code, stderr)
 	}
 	if decoded := decodeJSON(t, stdout); decoded["error"] == nil {
 		t.Errorf("output %q is missing the error key", stdout)
@@ -508,8 +508,8 @@ func TestVerifyReportsPartialResultOnFailure(t *testing.T) {
 	stdout, stderr, code := run(t, "-j", "verify",
 		"-a", f.allowed, "-f", tampered, "-s", f.signature, "-n", "git",
 	)
-	if code != 0 {
-		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	if code != 1 {
+		t.Fatalf("exit status = %d, want 1 (stderr: %s)", code, stderr)
 	}
 
 	result, ok := decodeJSON(t, stdout)["result"].(map[string]any)
