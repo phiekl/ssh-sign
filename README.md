@@ -49,12 +49,11 @@ checking it.
 | `designation` | outcome of checking the namespace against `-n` or allowed signers: `valid`, `invalid` or `disabled` |
 | `verification` | outcome of the cryptographic check: `valid` or `invalid` |
 
-`disabled` means no value was required, or the check was waived with `-N` or
-`-K`. For `verify`, a matching `namespaces=` restriction in the allowed signers
-file reports `designation` as `valid` even when `-n` is omitted. For
-`authentication`, `disabled` means no `-p` was given; `verify` still requires a
-matching allowed signers entry.
-
+`disabled` means that the corresponding check was not requested. With `check`,
+`-K` disables `authentication` and `-N` disables `designation`. With `verify`,
+`authentication` is disabled when `-p` is omitted, although the key must still
+match an allowed signers entry. `designation` is disabled only with `-N`; a
+matching `namespaces=` restriction instead makes it `valid`.
 
 ## Main command
 
@@ -231,32 +230,27 @@ Enabling JSON output for the last one gives:
 ```
 
 > [!IMPORTANT]
-> Without either option, `verify` accepts the namespace carried by the signature
-> while enforcing any `namespaces=` restriction in the matching allowed signers
-> entry. This is suitable when the allowed signers file is the namespace policy.
+> If neither `-n` nor `-N` is given, the signature's namespace must match a
+> `namespaces=` restriction in an applicable allowed signers entry. Entries
+> with namespace restrictions take precedence over unrestricted entries,
+> regardless of their order. Verification fails if no restriction matches.
 >
-> Use `-n` when the verification has an independently known namespace, such as
-> an application protocol. `-N` is a complete waiver: it also ignores namespace
-> restrictions in the allowed signers file. Key, principal and time restrictions
-> are still enforced.
+> Use `-n` when the expected namespace is known independently. `-N` disables
+> all namespace checks, including restrictions in the allowed signers file.
+> Key, principal and time checks still apply.
 
 > [!NOTE]
-> `authentication` reports on pinning the signer to one identity with `-p`, so
-> `disabled` means no `-p` was given, not that nothing was checked: `verify`
-> always has to find the signer in the allowed signers file, and reports failing
-> that as `invalid`. Without `-p`, `principal` reports the pattern-list of the
-> entry that matched.
+> `authentication` indicates whether the signer is authorized for the
+> principal specified with `-p`. If `-p` is omitted, `authentication` is
+> `disabled` and `principal` contains the pattern-list from the matching allowed
+> signers entry. The signer's key must still appear in the allowed signers file.
 
 #### Example
 
 ```
 $ echo 'test1@localhost ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk' > allowed_signers
 $ ssh-sign verify -a allowed_signers -f data < data.sig
- principal      = test1@localhost
- authentication = disabled
- namespace      = file
- designation    = disabled
- verification   = valid
+error: verify: signature namespace "file" was left unverified: no namespace was requested and no matching allowed signers entry restricts one (use -n, -N or namespaces=)
 $ ssh-sign verify -a allowed_signers -f data -n file -p test1@localhost < data.sig
  principal      = test1@localhost
  authentication = valid

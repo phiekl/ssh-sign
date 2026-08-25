@@ -160,6 +160,57 @@ func TestMatchEntryPrefersALaterUsableEntry(t *testing.T) {
 	}
 }
 
+func TestMatchEntryRestrictingNamespace(t *testing.T) {
+	restrictedFirst := parseLines(t,
+		`alice@example.com namespaces="git" `+testKey,
+		"alice@example.com "+testKey,
+	)
+	unrestrictedFirst := parseLines(t,
+		"alice@example.com "+testKey,
+		`alice@example.com namespaces="git" `+testKey,
+	)
+
+	for name, tt := range map[string]struct {
+		file     *File
+		ns       string
+		wantLine int
+		want     bool
+	}{
+		"restricted listed first":  {file: restrictedFirst, ns: "git", wantLine: 1, want: true},
+		"restricted listed second": {file: unrestrictedFirst, ns: "git", wantLine: 2, want: true},
+		"restriction excludes it": {file: unrestrictedFirst, ns: "email", wantLine: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			key := tt.file.Entries[0].PublicKey
+			ent, restricted, err := tt.file.MatchEntryRestrictingNamespace(
+				key, "", tt.ns, time.Now(),
+			)
+			if err != nil || ent == nil {
+				t.Fatalf("MatchEntryRestrictingNamespace() = %v, %v, want an entry", ent, err)
+			}
+			if ent.Line != tt.wantLine {
+				t.Errorf("matched line %d, want %d", ent.Line, tt.wantLine)
+			}
+			if restricted != tt.want {
+				t.Errorf("restricted = %v, want %v", restricted, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchEntryRestrictingNamespaceKeepsTimeConstraints(t *testing.T) {
+	f := parseLines(t, `alice@example.com valid-before="20260201Z" `+testKey)
+	key := f.Entries[0].PublicKey
+
+	ent, restricted, err := f.MatchEntryRestrictingNamespace(key, "", "git", at(t, "2026-02-02"))
+	if ent != nil || restricted {
+		t.Errorf("MatchEntryRestrictingNamespace() = %v, %v, want no entry", ent, restricted)
+	}
+	if err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Errorf("MatchEntryRestrictingNamespace() error = %v, want an expiry error", err)
+	}
+}
+
 // TestMatchEntryReportsEveryConstraintFailure covers a key listed twice where
 // neither listing is usable, so the caller learns why each one was rejected.
 func TestMatchEntryReportsEveryConstraintFailure(t *testing.T) {

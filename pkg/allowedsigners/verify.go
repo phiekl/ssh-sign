@@ -25,10 +25,8 @@ func (e *constraintError) Error() string {
 	return strings.Join(e.messages, ", ")
 }
 
-// NamespaceConstraintResult reports a conclusive namespace-policy result from
-// a failed MatchEntry call. checked is false when another matching entry had no
-// namespace restriction, so the overall failure cannot be attributed to the
-// namespace.
+// NamespaceConstraintResult extracts a conclusive namespace result from a
+// failed MatchEntry call.
 func NamespaceConstraintResult(err error) (checked, matched bool) {
 	var constraintErr *constraintError
 	if !errors.As(err, &constraintErr) {
@@ -44,10 +42,22 @@ func NamespaceConstraintResult(err error) (checked, matched bool) {
 	return false, false
 }
 
+// namespaceMode controls namespace matching.
+type namespaceMode int
+
+const (
+	namespaceIgnored namespaceMode = iota
+	// namespaceChecked accepts unrestricted entries.
+	namespaceChecked
+	// namespaceRequired prefers a restricted entry anywhere in the file.
+	namespaceRequired
+)
+
 // MatchEntry finds the first entry matching given pubkey and optionally a principal.
 // Any namespace or time restriction defined by the entry will be validated.
 func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) (*Entry, error) {
-	return f.matchEntry(pk, principal, ns, ts, true)
+	ent, _, err := f.matchEntry(pk, principal, ns, ts, namespaceChecked)
+	return ent, err
 }
 
 // MatchEntryIgnoringNamespace finds the first entry matching the given public
@@ -56,14 +66,26 @@ func (f *File) MatchEntry(pk ssh.PublicKey, principal, ns string, ts time.Time) 
 func (f *File) MatchEntryIgnoringNamespace(
 	pk ssh.PublicKey, principal string, ts time.Time,
 ) (*Entry, error) {
-	return f.matchEntry(pk, principal, "", ts, false)
+	ent, _, err := f.matchEntry(pk, principal, "", ts, namespaceIgnored)
+	return ent, err
+}
+
+// MatchEntryRestrictingNamespace prefers an entry whose namespaces= restriction
+// permits ns. It returns an unrestricted fallback with restricted=false.
+func (f *File) MatchEntryRestrictingNamespace(
+	pk ssh.PublicKey, principal, ns string, ts time.Time,
+) (ent *Entry, restricted bool, err error) {
+	return f.matchEntry(pk, principal, ns, ts, namespaceRequired)
 }
 
 func (f *File) matchEntry(
-	pk ssh.PublicKey, principal, ns string, ts time.Time, checkNamespace bool,
-) (*Entry, error) {
+	pk ssh.PublicKey, principal, ns string, ts time.Time, mode namespaceMode,
+) (*Entry, bool, error) {
 	var errs []string
 	var candidates, namespaceMatches, namespaceMismatches int
+	// First usable fallback for namespaceRequired.
+	var unrestricted *Entry
+
 	for i := range f.Entries {
 		ent := &f.Entries[i]
 
@@ -74,7 +96,8 @@ func (f *File) matchEntry(
 			continue
 		}
 		candidates++
-		if checkNamespace && len(ent.Options.Namespaces) > 0 {
+		restricted := mode != namespaceIgnored && len(ent.Options.Namespaces) > 0
+		if restricted {
 			if !patternsMatch(ent.Options.Namespaces, ns) {
 				namespaceMismatches++
 				errs = append(errs, fmt.Sprintf("line=%d: namespace mismatch", ent.Line))
@@ -90,11 +113,20 @@ func (f *File) matchEntry(
 			errs = append(errs, fmt.Sprintf("line=%d: expired", ent.Line))
 			continue
 		}
+		if mode == namespaceRequired && !restricted {
+			if unrestricted == nil {
+				unrestricted = ent
+			}
+			continue
+		}
 
-		return ent, nil
+		return ent, restricted, nil
+	}
+	if unrestricted != nil {
+		return unrestricted, false, nil
 	}
 	if len(errs) > 0 {
-		return nil, &constraintError{
+		return nil, false, &constraintError{
 			messages:            errs,
 			candidates:          candidates,
 			namespaceMatches:    namespaceMatches,
@@ -102,6 +134,5 @@ func (f *File) matchEntry(
 		}
 	}
 
-	// Principal/pubkey was not found => no entry, but no error either.
-	return nil, nil
+	return nil, false, nil
 }

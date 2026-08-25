@@ -56,9 +56,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	if err := requireReader(opts.VerifyFile, "verify file"); err != nil {
 		return nil, []error{err}
 	}
-	// Unlike check, verify may defer namespace validation to the allowed
-	// signers file by leaving both options unset. An explicit waiver remains
-	// mutually exclusive with an explicit namespace pin.
+	// Allowed signers may supply the namespace when both options are unset.
 	if opts.Namespace != "" || opts.NoNamespace {
 		if err := CheckNamespace(opts.Namespace, opts.NoNamespace); err != nil {
 			return nil, []error{err}
@@ -79,13 +77,10 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		return nil, []error{err}
 	}
 
-	// Every check below is independent, so all of them run and report, in the
-	// same way check does. That keeps a partial result available even when something fails.
+	// Run every check so failures still include a partial result.
 	res := VerifyResult{Namespace: sig.Namespace}
 
-	// An explicit namespace is an invocation-specific pin. Without one, the
-	// namespace embedded in the signature is still checked against any policy
-	// on the matched allowed signers entry below.
+	// Without an explicit namespace, allowed signers supplies the namespace policy.
 	if opts.Namespace == "" {
 		res.Designation = "disabled"
 	} else if opts.Namespace == sig.Namespace {
@@ -98,34 +93,45 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	}
 
 	var ent *allowedsigners.Entry
-	if opts.NoNamespace {
+	var restricted bool
+	switch {
+	case opts.NoNamespace:
 		ent, err = parsed.MatchEntryIgnoringNamespace(
 			sig.PublicKey, opts.Principal, timestamp,
 		)
-	} else {
+	case opts.Namespace == "":
+		// Prefer an entry that supplies namespace policy.
+		ent, restricted, err = parsed.MatchEntryRestrictingNamespace(
+			sig.PublicKey, opts.Principal, sig.Namespace, timestamp,
+		)
+	default:
 		ent, err = parsed.MatchEntry(
 			sig.PublicKey, opts.Principal, sig.Namespace, timestamp,
 		)
 	}
-	// Without an invocation-specific pin, a namespace restriction on the
-	// matched allowed signers entry supplies the designation policy.
+	// Reject a namespace that neither the invocation nor allowed signers checked.
 	if opts.Namespace == "" && !opts.NoNamespace {
+		checked, matched := allowedsigners.NamespaceConstraintResult(err)
 		switch {
-		case ent != nil && len(ent.Options.Namespaces) > 0:
+		case restricted:
 			res.Designation = "valid"
-		case ent == nil:
-			if checked, matched := allowedsigners.NamespaceConstraintResult(err); checked {
-				if matched {
-					res.Designation = "valid"
-				} else {
-					res.Designation = "invalid"
-				}
-			}
+		case checked && matched:
+			res.Designation = "valid"
+		case checked:
+			res.Designation = "invalid"
+		case ent != nil:
+			res.Designation = "invalid"
+			errs = append(errs, fmt.Errorf(
+				"signature namespace %q was left unverified: no namespace was requested "+
+					"and no matching allowed signers entry restricts one "+
+					"(use -n, -N or namespaces=)",
+				sig.Namespace,
+			))
+		default:
+			res.Designation = "invalid"
 		}
 	}
-	// With -n, the signature namespace must match both the requested namespace
-	// and any namespaces= restriction in the allowed signers entry. Report it
-	// as invalid if the allowed signers restriction rejects it, even when -n matched.
+	// An explicit namespace must also satisfy allowed signers.
 	if opts.Namespace != "" && !opts.NoNamespace {
 		if checked, matched := allowedsigners.NamespaceConstraintResult(err); checked && !matched {
 			res.Designation = "invalid"

@@ -307,12 +307,28 @@ func TestVerifyRejectsSignatureFromAnotherNamespace(t *testing.T) {
 	}
 }
 
-func TestVerifyAcceptsAnUnpinnedNamespace(t *testing.T) {
+func TestVerifyRejectsAnUnconstrainedNamespace(t *testing.T) {
 	f := newFixture(t, "email")
 
 	_, stderr, code := run(t, "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature)
+	if code == 0 {
+		t.Errorf("exit status = 0 for an unconstrained namespace, want non-zero")
+	}
+	if !strings.Contains(stderr, `namespace "email" was left unverified`) {
+		t.Errorf("stderr = %q, want an unverified namespace", stderr)
+	}
+}
+
+func TestVerifyAcceptsAnUnpinnedNamespaceAllowedByPolicy(t *testing.T) {
+	f := newFixture(t, "email")
+	f.writeAllowed(t, f.principal+` namespaces="email" `+f.keyLine())
+
+	stdout, stderr, code := run(t, "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature)
 	if code != 0 {
-		t.Errorf("exit status = %d for an unpinned namespace, want 0 (stderr: %s)", code, stderr)
+		t.Fatalf("exit status = %d for an unpinned namespace, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "designation    = valid") {
+		t.Errorf("stdout = %q, want the allowed signers policy to have designated it", stdout)
 	}
 }
 

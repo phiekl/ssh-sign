@@ -94,16 +94,19 @@ func TestVerifyDoesNotSetDefaultTimestamp(t *testing.T) {
 	}
 }
 
-func TestVerifyAcceptsAnUnpinnedNamespace(t *testing.T) {
+func TestVerifyRejectsAnUnconstrainedNamespace(t *testing.T) {
 	s := sign(t, "git")
 
 	opts := s.verifyOpts("alice@example.com "+s.keyLine+"\n", "")
 	res, errs := Verify(opts)
-	if len(errs) != 0 {
-		t.Fatalf("Verify() errors = %v, want none", errs)
+	if !strings.Contains(errorText(errs), "left unverified") {
+		t.Fatalf("Verify() errors = %v, want an unverified namespace", errs)
 	}
-	if res.Designation != "disabled" || res.Verification != "valid" {
-		t.Errorf("Verify() = %+v, want an unpinned, valid signature", res)
+	if res.Designation != "invalid" {
+		t.Errorf("Designation = %q, want %q", res.Designation, "invalid")
+	}
+	if res.Verification != "valid" || res.Authentication != "disabled" {
+		t.Errorf("Verify() = %+v, want the other checks to have passed", res)
 	}
 }
 
@@ -117,6 +120,34 @@ func TestVerifyReportsAllowedSignersNamespaceAsValid(t *testing.T) {
 	}
 	if res.Designation != "valid" {
 		t.Errorf("Designation = %q, want %q", res.Designation, "valid")
+	}
+}
+
+func TestVerifyFindsANamespaceRestrictionListedLater(t *testing.T) {
+	s := sign(t, "git")
+	allowed := "alice@example.com " + s.keyLine + "\n" +
+		`alice@example.com namespaces="git" ` + s.keyLine + "\n"
+
+	res, errs := Verify(s.verifyOpts(allowed, ""))
+	if len(errs) != 0 {
+		t.Fatalf("Verify() errors = %v, want none", errs)
+	}
+	if res.Designation != "valid" {
+		t.Errorf("Designation = %q, want %q", res.Designation, "valid")
+	}
+}
+
+func TestVerifyRejectsANamespaceOnlyOtherEntriesRestrict(t *testing.T) {
+	s := sign(t, "email")
+	allowed := "alice@example.com " + s.keyLine + "\n" +
+		`alice@example.com namespaces="git" ` + s.keyLine + "\n"
+
+	res, errs := Verify(s.verifyOpts(allowed, ""))
+	if !strings.Contains(errorText(errs), "left unverified") {
+		t.Fatalf("Verify() errors = %v, want an unverified namespace", errs)
+	}
+	if res.Designation != "invalid" || res.Authentication != "disabled" {
+		t.Errorf("Verify() = %+v, want the signer listed but the namespace unverified", res)
 	}
 }
 
@@ -191,6 +222,19 @@ func TestVerifyRejectsAnUnlistedSigner(t *testing.T) {
 	}
 	if res.Authentication != "invalid" {
 		t.Errorf("Authentication = %q, want %q", res.Authentication, "invalid")
+	}
+}
+
+func TestVerifyBlamesOnlyTheUnlistedSigner(t *testing.T) {
+	s := sign(t, "git")
+	other := sign(t, "git")
+
+	res, errs := Verify(s.verifyOpts("alice@example.com "+other.keyLine+"\n", ""))
+	if len(errs) != 1 || !strings.Contains(errorText(errs), "not found within allowed signers") {
+		t.Fatalf("Verify() errors = %v, want only an unknown-signer error", errs)
+	}
+	if res.Designation != "invalid" {
+		t.Errorf("Designation = %q, want %q", res.Designation, "invalid")
 	}
 }
 
