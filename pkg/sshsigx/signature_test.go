@@ -137,6 +137,79 @@ func TestSignatureReadRejectsDSA(t *testing.T) {
 	}
 }
 
+// craftedSignature armors a hand-built SSHSIG blob.
+func craftedSignature(t *testing.T, wire signatureWire) string {
+	t.Helper()
+	copy(wire.MagicPreamble[:], []byte("SSHSIG"))
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  sshsig.PEMType,
+		Bytes: ssh.Marshal(wire),
+	}))
+}
+
+func TestSignatureReadBoundsHostileFields(t *testing.T) {
+	huge := strings.Repeat("F", 1<<20)
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating RSA key: %v", err)
+	}
+	rsaPublicKey, err := ssh.NewPublicKey(&rsaKey.PublicKey)
+	if err != nil {
+		t.Fatalf("converting RSA key: %v", err)
+	}
+
+	tests := map[string]struct {
+		input   string
+		wantErr string
+	}{
+		"signature format": {
+			input: craftedSignature(t, signatureWire{
+				Version:       1,
+				PublicKey:     string(rsaPublicKey.Marshal()),
+				Namespace:     "file",
+				HashAlgorithm: "sha512",
+				Signature:     string(ssh.Marshal(ssh.Signature{Format: huge, Blob: []byte("x")})),
+			}),
+			wantErr: "invalid signature format",
+		},
+		"hash algorithm": {
+			input: craftedSignature(t, signatureWire{
+				Version:       1,
+				PublicKey:     string(rsaPublicKey.Marshal()),
+				Namespace:     "file",
+				HashAlgorithm: huge,
+				Signature:     string(ssh.Marshal(ssh.Signature{Format: "x", Blob: []byte("x")})),
+			}),
+			wantErr: "unsupported hash algorithm",
+		},
+		"PEM type": {
+			input: "-----BEGIN SSH SIGNATURE-----JUNK\n" +
+				"-----BEGIN " + huge + "-----\nAAAA\n-----END " + huge + "-----\n",
+			wantErr: "invalid PEM type",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := SignatureRead(strings.NewReader(tt.input))
+			if err == nil {
+				t.Fatalf("SignatureRead() error = nil, want %q", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("SignatureRead() error = %.120q, want it to contain %q", err, tt.wantErr)
+			}
+			if len(err.Error()) > 1024 {
+				t.Errorf("SignatureRead() error is %d bytes long, want it bounded",
+					len(err.Error()))
+			}
+			if !strings.Contains(err.Error(), "bytes total") {
+				t.Errorf("SignatureRead() error = %.120q, want the full length reported", err)
+			}
+		})
+	}
+}
+
 func TestSignatureVerifyRejectsOtherData(t *testing.T) {
 	signer := newSigner(t)
 

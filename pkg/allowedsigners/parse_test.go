@@ -174,6 +174,30 @@ func TestParseRejectsMalformedLines(t *testing.T) {
 	}
 }
 
+func TestParseTruncatesEchoedOptionKeys(t *testing.T) {
+	huge := strings.Repeat("A", 1<<20)
+
+	for name, line := range map[string]string{
+		// Reaches the value-unquoting error path.
+		"malformed value": `alice@example.com ` + huge + `="x"junk ` + testKey,
+		"unknown option":  `alice@example.com ` + huge + `="x" ` + testKey,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse(strings.NewReader(line + "\n"))
+			if err == nil {
+				t.Fatal("Parse() unexpectedly succeeded")
+			}
+			if len(err.Error()) > 512 {
+				t.Errorf("Parse() error is %d bytes long, want the key truncated",
+					len(err.Error()))
+			}
+			if !strings.Contains(err.Error(), "1048576 bytes total") {
+				t.Errorf("Parse() error = %v, want the full key length reported", err)
+			}
+		})
+	}
+}
+
 // TestParseAcceptsAFileWithoutEntries covers a file that authorises nobody. It
 // is well-formed, so it must not read as malformed input; the lookup simply
 // finds no signer, as it does under ssh-keygen.

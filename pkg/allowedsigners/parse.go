@@ -125,7 +125,8 @@ func parseLine(n int, line string) (*Entry, error) {
 	if pk.Type() != e.KeyType {
 		return nil, &ParseError{
 			Line: n,
-			Msg:  fmt.Sprintf("key type mismatch: defined %q but parsed %q", e.KeyType, pk.Type()),
+			Msg: fmt.Sprintf("key type mismatch: defined %s but parsed %q",
+				sshsigx.QuoteToken(e.KeyType), pk.Type()),
 		}
 	}
 	e.PublicKey = pk
@@ -157,14 +158,14 @@ func parseOptions(s string) (Options, error) {
 
 		k, v, ok := strings.Cut(part, "=")
 		if !ok {
-			return o, fmt.Errorf("unknown option %q", part)
+			return o, fmt.Errorf("unknown option %s", sshsigx.QuoteToken(part))
 		}
 
 		key := strings.ToLower(strings.TrimSpace(k))
 		val := strings.TrimSpace(v)
 		val, err = unquoteOptionValue(val)
 		if err != nil {
-			return o, fmt.Errorf("option %s: %w", key, err)
+			return o, fmt.Errorf("option %s: %w", sshsigx.QuoteToken(key), err)
 		}
 
 		switch key {
@@ -195,7 +196,7 @@ func parseOptions(s string) (Options, error) {
 			}
 			o.ValidBefore = &t
 		default:
-			return o, fmt.Errorf("unsupported option %q", k)
+			return o, fmt.Errorf("unsupported option %s", sshsigx.QuoteToken(k))
 		}
 	}
 	if o.ValidAfter != nil && o.ValidBefore != nil && !o.ValidBefore.After(*o.ValidAfter) {

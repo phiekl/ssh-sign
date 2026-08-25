@@ -75,10 +75,11 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 	if block == nil {
 		return nil, fmt.Errorf("unarmoring data failed: invalid PEM block")
 	}
+	// The prefix does not constrain a later PEM block's type.
 	if block.Type != sshsig.PEMType {
 		return nil, fmt.Errorf(
-			"unarmoring data failed: invalid PEM type %q: expected %q",
-			block.Type, sshsig.PEMType,
+			"unarmoring data failed: invalid PEM type %s: expected %q",
+			QuoteToken(block.Type), sshsig.PEMType,
 		)
 	}
 	if len(block.Headers) != 0 {
@@ -90,11 +91,11 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 
 	sig, err := sshsig.ParseSignature(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("unarmoring data failed: %v", err)
+		return nil, fmt.Errorf("unarmoring data failed: %v", boundedError(err))
 	}
 	var wire signatureWire
 	if err := ssh.Unmarshal(block.Bytes, &wire); err != nil {
-		return nil, fmt.Errorf("unarmoring data failed: %v", err)
+		return nil, fmt.Errorf("unarmoring data failed: %v", boundedError(err))
 	}
 	if wire.Reserved != "" {
 		return nil, fmt.Errorf("signature reserved field is not empty")
@@ -119,8 +120,8 @@ func validateSignatureAlgorithm(sig *sshsig.Signature) error {
 		sig.Signature.Format != ssh.KeyAlgoRSASHA256 &&
 		sig.Signature.Format != ssh.KeyAlgoRSASHA512 {
 		return fmt.Errorf(
-			"invalid RSA signature format %q: expected %q or %q",
-			sig.Signature.Format, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512,
+			"invalid RSA signature format %s: expected %q or %q",
+			QuoteToken(sig.Signature.Format), ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512,
 		)
 	}
 	return nil
@@ -153,8 +154,9 @@ func isRSACertificate(pk ssh.PublicKey) bool {
 // *not* validate the authenticity of the pubkey or namespace.
 func SignatureVerify(in io.Reader, sig *sshsig.Signature) error {
 	if err := sshsig.Verify(in, sig, sig.PublicKey, sig.HashAlgorithm, sig.Namespace); err != nil {
-		if strings.HasPrefix(err.Error(), "ssh: ") {
-			return fmt.Errorf("%s", strings.TrimPrefix(err.Error(), "ssh: "))
+		err = boundedError(err)
+		if msg := err.Error(); strings.HasPrefix(msg, "ssh: ") {
+			return fmt.Errorf("%s", strings.TrimPrefix(msg, "ssh: "))
 		}
 		return fmt.Errorf("unexpected verification failure: %w", err)
 	}

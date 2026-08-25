@@ -25,14 +25,14 @@ func PublicKeyLineParse(pkLine string) (ssh.PublicKey, error) {
 	// required here, ssh.ParseAuthorizedKey() could have been used instead.
 	tokens := strings.Fields(pkLine)
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("%q contains no usable non-space tokens", pkLine)
+		return nil, fmt.Errorf("%s contains no usable non-space tokens", QuoteToken(pkLine))
 	}
 
 	pkEnc := tokens[0]
 	// All key types contains a dash (e.g. ssh-ed25519), while base64 won't.
 	if strings.Contains(pkEnc, "-") {
 		if len(tokens) < 2 {
-			return nil, fmt.Errorf("no pubkey token found in %q", pkLine)
+			return nil, fmt.Errorf("no pubkey token found in %s", QuoteToken(pkLine))
 		}
 		pkEnc = tokens[1]
 	}
@@ -44,12 +44,12 @@ func PublicKeyLineParse(pkLine string) (ssh.PublicKey, error) {
 func PublicKeyParse(pkEnc string) (ssh.PublicKey, error) {
 	pkDec, err := base64.StdEncoding.DecodeString(pkEnc)
 	if err != nil {
-		return nil, fmt.Errorf("failed decoding %q: %v", pkEnc, err)
+		return nil, fmt.Errorf("failed decoding %s: %v", QuoteToken(pkEnc), err)
 	}
 
 	pk, err := ssh.ParsePublicKey(pkDec)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing pubkey %q: %v", pkEnc, err)
+		return nil, fmt.Errorf("failed parsing pubkey %s: %v", QuoteToken(pkEnc), err)
 	}
 	return pk, nil
 }

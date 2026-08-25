@@ -55,6 +55,28 @@ func TestPublicKeyLineParseRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestPublicKeyParseTruncatesTheEchoedToken(t *testing.T) {
+	token := strings.Repeat("A", 1<<20) + "@"
+
+	_, err := PublicKeyParse(token)
+	if err == nil {
+		t.Fatal("PublicKeyParse() unexpectedly succeeded")
+	}
+	if len(err.Error()) > 512 {
+		t.Errorf("PublicKeyParse() error is %d bytes long, want the token truncated",
+			len(err.Error()))
+	}
+	if !strings.Contains(err.Error(), "1048577 bytes total") {
+		t.Errorf("PublicKeyParse() error = %v, want the full token length reported", err)
+	}
+}
+
+func TestQuoteTokenLeavesShortTokensIntact(t *testing.T) {
+	if got, want := QuoteToken("ssh-ed25519"), `"ssh-ed25519"`; got != want {
+		t.Errorf("QuoteToken() = %s, want %s", got, want)
+	}
+}
+
 func TestNewPublicKeyInfo(t *testing.T) {
 	pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(testKey))
 	if err != nil {
