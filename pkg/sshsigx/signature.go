@@ -110,6 +110,11 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 }
 
 func validateSignatureAlgorithm(sig *sshsig.Signature) error {
+	// OpenSSH no longer accepts DSA signatures.
+	if publicKeyType(sig.PublicKey) == ssh.InsecureKeyAlgoDSA ||
+		sig.Signature.Format == ssh.InsecureKeyAlgoDSA {
+		return fmt.Errorf("unsupported signature algorithm %q", ssh.InsecureKeyAlgoDSA)
+	}
 	if publicKeyType(sig.PublicKey) == ssh.KeyAlgoRSA &&
 		sig.Signature.Format != ssh.KeyAlgoRSASHA256 &&
 		sig.Signature.Format != ssh.KeyAlgoRSASHA512 {

@@ -5,6 +5,7 @@
 package sshsigx
 
 import (
+	"crypto/dsa"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
@@ -105,6 +106,34 @@ func TestSignatureReadRejectsSHA1ForRSACertificate(t *testing.T) {
 	_, err = SignatureRead(strings.NewReader(string(sshsig.Armor(sig))))
 	if err == nil || !strings.Contains(err.Error(), "invalid RSA signature format") {
 		t.Fatalf("SignatureRead() error = %v, want an invalid RSA signature format error", err)
+	}
+}
+
+func TestSignatureReadRejectsDSA(t *testing.T) {
+	var params dsa.Parameters
+	if err := dsa.GenerateParameters(&params, rand.Reader, dsa.L1024N160); err != nil {
+		t.Fatalf("generating DSA parameters: %v", err)
+	}
+	privateKey := &dsa.PrivateKey{PublicKey: dsa.PublicKey{Parameters: params}}
+	if err := dsa.GenerateKey(privateKey, rand.Reader); err != nil {
+		t.Fatalf("generating DSA key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatalf("creating DSA signer: %v", err)
+	}
+
+	// Bypass SignatureCreate, which rejects DSA.
+	sig, err := sshsig.Sign(strings.NewReader("data\n"), signer, sshsig.HashSHA512, "file")
+	if err != nil {
+		t.Fatalf("creating DSA signature: %v", err)
+	}
+	if _, err := SignatureRead(strings.NewReader(string(sshsig.Armor(sig)))); err == nil ||
+		!strings.Contains(err.Error(), `unsupported signature algorithm "ssh-dss"`) {
+		t.Fatalf("SignatureRead() error = %v, want a rejected DSA signature", err)
+	}
+	if _, err := SignatureCreate(signer, "file", strings.NewReader("data\n")); err == nil {
+		t.Fatal("SignatureCreate() error = nil, want a rejected DSA signature")
 	}
 }
 
