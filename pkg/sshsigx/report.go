@@ -7,6 +7,8 @@ package sshsigx
 import (
 	"fmt"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 )
 
 // Limits for untrusted data echoed in errors.
@@ -29,9 +31,13 @@ func boundedError(err error) error {
 	if len(msg) <= maxBoundedError {
 		return err
 	}
+	// Cutting by byte can split a multibyte rune, so drop a partial tail.
+	cut := strings.TrimRightFunc(msg[:maxBoundedError], func(r rune) bool {
+		return r == utf8.RuneError
+	})
 	return &truncatedError{
 		err: err,
-		msg: fmt.Sprintf("%s... (%d bytes total)", msg[:maxBoundedError], len(msg)),
+		msg: fmt.Sprintf("%s... (%d bytes total)", cut, len(msg)),
 	}
 }
 

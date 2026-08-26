@@ -88,6 +88,7 @@ func main() {
 		if err != nil {
 			die(opts.CommandName, err)
 		}
+		out = cli.EscapeJSONControls(out)
 		if err := writeOutput(os.Stdout, string(out)); err != nil {
 			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
 		}
@@ -142,7 +143,7 @@ func dieUsage(prefix string, errs ...error) {
 
 func reportErrors(prefix string, errs ...error) {
 	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "error: %s: %v\n", prefix, err)
+		fmt.Fprintf(os.Stderr, "error: %s: %s\n", prefix, cli.EscapeControl(err.Error()))
 	}
 }
 

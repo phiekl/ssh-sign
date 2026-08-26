@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
@@ -541,6 +543,87 @@ func TestVerifyReportsPartialResultOnFailure(t *testing.T) {
 		if result[key] != want {
 			t.Errorf("result[%q] = %v, want %q", key, result[key], want)
 		}
+	}
+}
+
+// craftedKeyAlgorithm creates a signature with the given key algorithm.
+func craftedKeyAlgorithm(t *testing.T, algorithm string) string {
+	t.Helper()
+
+	wire := struct {
+		MagicPreamble [6]byte
+		Version       uint32
+		PublicKey     string
+		Namespace     string
+		Reserved      string
+		HashAlgorithm string
+		Signature     string
+	}{
+		MagicPreamble: [6]byte{'S', 'S', 'H', 'S', 'I', 'G'},
+		Version:       1,
+		PublicKey:     string(ssh.Marshal(struct{ Algorithm string }{algorithm})),
+		Namespace:     "file",
+		HashAlgorithm: "sha512",
+		Signature:     string(ssh.Marshal(ssh.Signature{Format: "x", Blob: []byte("x")})),
+	}
+	armored := pem.EncodeToMemory(&pem.Block{
+		Type:  sshsig.PEMType,
+		Bytes: ssh.Marshal(wire),
+	})
+	signature := filepath.Join(t.TempDir(), "crafted.sig")
+	if err := os.WriteFile(signature, armored, 0o600); err != nil {
+		t.Fatalf("writing signature: %v", err)
+	}
+	return signature
+}
+
+// hasRawControl permits newlines but rejects other controls and invalid UTF-8.
+func hasRawControl(s string) bool {
+	if !utf8.ValidString(s) {
+		return true
+	}
+	return strings.ContainsFunc(s, func(r rune) bool {
+		return r != '\n' && (r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f))
+	})
+}
+
+func TestErrorsCarryNoTerminalEscapes(t *testing.T) {
+	for name, algorithm := range map[string]string{
+		"C0":        "ssh-x" + string(rune(0x1b)) + "]0;PWNED" + string(rune(0x07)),
+		"C1":        "ssh-x" + string(rune(0x9b)) + "31m",
+		"lone byte": "ssh-x" + string([]byte{0x9b}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			signature := craftedKeyAlgorithm(t, algorithm)
+
+			_, stderr, code := run(t, "inspect", "-s", signature)
+			if code == 0 {
+				t.Fatal("exit status = 0 for a crafted signature, want non-zero")
+			}
+			if !strings.Contains(stderr, "unknown key algorithm") {
+				t.Fatalf("stderr = %q, want the parse failure reported", stderr)
+			}
+			if hasRawControl(stderr) {
+				t.Errorf("stderr = %q, want no raw control characters", stderr)
+			}
+
+			stdout, _, code := run(t, "-j", "inspect", "-s", signature)
+			if code == 0 {
+				t.Fatal("exit status = 0 for a crafted signature, want non-zero")
+			}
+			if hasRawControl(stdout) {
+				t.Errorf("stdout = %q, want no raw control characters", stdout)
+			}
+			// JSON preserves valid input; its encoder replaces invalid UTF-8.
+			reported, ok := decodeJSON(t, stdout)["error"].([]any)
+			if !ok || len(reported) != 1 {
+				t.Fatalf("output %q is missing the error key", stdout)
+			}
+			message, _ := reported[0].(string)
+			if utf8.ValidString(algorithm) && !strings.Contains(message, algorithm) {
+				t.Errorf("decoded error = %q, want it to hold the algorithm verbatim", message)
+			}
+		})
 	}
 }
 
