@@ -9,10 +9,14 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
+
+// Bound noninteractive agent operations. Signing may wait for user input.
+const agentTimeout = 30 * time.Second
 
 // AgentConnect connects to the SSH agent provided via the `SSH_AUTH_SOCK`
 // environment variable.
@@ -22,7 +26,7 @@ func AgentConnect() (net.Conn, agent.Agent, error) {
 		return nil, nil, fmt.Errorf("SSH_AUTH_SOCK is not set, an ssh-agent is required for signing")
 	}
 
-	conn, err := net.Dial("unix", sock)
+	conn, err := net.DialTimeout("unix", sock, agentTimeout)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to %q: %v", sock, err)
 	}
@@ -30,10 +34,30 @@ func AgentConnect() (net.Conn, agent.Agent, error) {
 	return conn, agent.NewClient(conn), nil
 }
 
-// AgentSigner gets a specific signer from the agent.
-func AgentSigner(a agent.Agent, pk ssh.PublicKey) (ssh.Signer, error) {
+// AgentSigner gets a signer, bounding key listing but not signing.
+// conn may be nil when no deadline can be set.
+func AgentSigner(conn net.Conn, a agent.Agent, pk ssh.PublicKey) (ssh.Signer, error) {
+	return agentSigner(conn, a, pk, agentTimeout)
+}
+
+func agentSigner(
+	conn net.Conn, a agent.Agent, pk ssh.PublicKey, timeout time.Duration,
+) (ssh.Signer, error) {
+	var deadline time.Time
+	if conn != nil {
+		deadline = time.Now().Add(timeout)
+		if err := conn.SetDeadline(deadline); err != nil {
+			return nil, fmt.Errorf("failed setting agent deadline: %v", err)
+		}
+		defer func() { _ = conn.SetDeadline(time.Time{}) }()
+	}
+
 	signers, err := a.Signers()
 	if err != nil {
+		// The client does not preserve the underlying timeout error.
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("no reply while listing keys within %s", timeout)
+		}
 		return nil, fmt.Errorf("failed listing keys: %v", err)
 	}
 

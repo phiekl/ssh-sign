@@ -62,7 +62,7 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	// was already produced, so it is not worth aborting over.
 	defer func() { _ = conn.Close() }()
 
-	signer, err := sshsigx.AgentSigner(agent, pk)
+	signer, err := sshsigx.AgentSigner(conn, agent, pk)
 	if err != nil {
 		return nil, append(errs, fmt.Errorf("agent: %v", err))
 	}

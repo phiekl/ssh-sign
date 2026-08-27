@@ -116,6 +116,9 @@ ErHRKw6biwpo2ZeYpEvmFQAxqn5iFWczak8drGAM
 > **Specifying keyfiles directly is not supported.** After all, you should be
 > using a hardware token for your SSH key anyway, and therefore an agent of
 > some kind.
+>
+> Agent connection and key listing time out after 30 seconds. Signing has no
+> timeout because hardware keys may wait for a touch or PIN.
 
 
 ### Inspect
