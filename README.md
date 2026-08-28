@@ -21,14 +21,6 @@ standard library. Compatibility is tested by signing and verifying with both
 `ssh-sign` and `ssh-keygen`.
 
 
-## Disclaimer
-
-> [!WARNING]
-> This is currently just a proof of concept, and very much a work in progress.
->
-> You should probably not use it for anything important.
-
-
 ## Exit status
 
 `ssh-sign` exits `0` when the command succeeds, `1` on runtime errors and `2`
@@ -40,22 +32,22 @@ In JSON mode, runtime errors are written to stdout under `error` before exiting
 
 ## Result fields
 
-`verify` and `check` report each checked value next to the outcome of
-checking it.
+`verify` and `check` reports various information and result fields:
 
 | field | meaning |
 | --- | --- |
-| `principal` | the identity the signer was pinned to with `-p` (`verify` only) |
-| `authentication` | outcome of that pinning: `valid`, `invalid` or `disabled` |
-| `namespace` | the namespace the signature carries (`verify` only; use `inspect` under `check`) |
-| `designation` | outcome of checking the namespace against `-n` or allowed signers: `valid`, `invalid` or `disabled` |
-| `verification` | outcome of the cryptographic check: `valid` or `invalid` |
+| `principal` | the identity specified with `-p` (`verify` only) |
+| `authentication` | result of checking the signer against the specified principal: `valid`, `invalid` or `disabled` |
+| `namespace` | the signature's namespace (`verify` only; run `inspect` to view it when using `check`) |
+| `designation` | result of checking the namespace against `-n` or allowed signers: `valid`, `invalid` or `disabled` |
+| `verification` | result of verifying the signature: `valid` or `invalid` |
 
 `disabled` means that the corresponding check was not requested. With `check`,
 `-K` disables `authentication` and `-N` disables `designation`. With `verify`,
 `authentication` is disabled when `-p` is omitted, although the key must still
 match an allowed signers entry. `designation` is disabled only with `-N`; a
 matching `namespaces=` restriction instead makes it `valid`.
+
 
 ## Main command
 
@@ -249,6 +241,12 @@ Enabling JSON output for the last one gives:
 > principal specified with `-p`. If `-p` is omitted, `authentication` is
 > `disabled` and `principal` contains the pattern-list from the matching allowed
 > signers entry. The signer's key must still appear in the allowed signers file.
+
+> [!NOTE]
+> A `-t` timestamp without a time zone and an allowed-signers timestamp without
+> a trailing `Z` are interpreted in the local time zone, matching `ssh-keygen`.
+> For reproducible CI results, include an RFC3339 offset in the `-t` value and
+> append `Z` to timestamps in the allowed signers file.
 
 #### Example
 
