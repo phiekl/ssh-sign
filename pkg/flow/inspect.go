@@ -9,7 +9,7 @@ import (
 	"io"
 
 	"pxy.se/go/ssh-sign/pkg/cli"
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type InspectOpts struct {
@@ -17,7 +17,7 @@ type InspectOpts struct {
 }
 
 type InspectResult struct {
-	sshsigx.SignatureInfo
+	sshsig.SignatureInfo
 }
 
 func (r InspectResult) String() string {
@@ -58,11 +58,11 @@ func Inspect(opts *InspectOpts) (*InspectResult, []error) {
 		return nil, append(errs, err)
 	}
 
-	sig, err := sshsigx.SignatureRead(opts.SignatureFile)
+	sig, err := sshsig.SignatureRead(opts.SignatureFile)
 	if err != nil {
 		return nil, append(errs, err)
 	}
 
-	res := InspectResult{sshsigx.NewSignatureInfo(sig)}
+	res := InspectResult{sshsig.NewSignatureInfo(sig)}
 	return &res, errs
 }

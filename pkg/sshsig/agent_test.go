@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-package sshsigx
+package sshsig
 
 import (
 	"crypto/ed25519"

@@ -22,9 +22,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 // otherKeyLine is a valid ssh-ed25519 key that no fixture ever signs with.

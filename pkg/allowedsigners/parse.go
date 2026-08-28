@@ -10,7 +10,7 @@ import (
 	"io"
 	"strings"
 
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 // maxLineSize matches OpenSSH's SSHBUF_SIZE_MAX. Certificate-backed entries
@@ -117,7 +117,7 @@ func parseLine(n int, line string) (*Entry, error) {
 	e.KeyBase64 = fields[keyTypeIdx+1]
 
 	// Validate/parse key.
-	pk, err := sshsigx.PublicKeyParse(e.KeyBase64)
+	pk, err := sshsig.PublicKeyParse(e.KeyBase64)
 	if err != nil {
 		return nil, &ParseError{Line: n, Msg: fmt.Sprintf("invalid ssh public key: %v", err)}
 	}
@@ -126,7 +126,7 @@ func parseLine(n int, line string) (*Entry, error) {
 		return nil, &ParseError{
 			Line: n,
 			Msg: fmt.Sprintf("key type mismatch: defined %s but parsed %q",
-				sshsigx.QuoteToken(e.KeyType), pk.Type()),
+				sshsig.QuoteToken(e.KeyType), pk.Type()),
 		}
 	}
 	e.PublicKey = pk
@@ -158,14 +158,14 @@ func parseOptions(s string) (Options, error) {
 
 		k, v, ok := strings.Cut(part, "=")
 		if !ok {
-			return o, fmt.Errorf("unknown option %s", sshsigx.QuoteToken(part))
+			return o, fmt.Errorf("unknown option %s", sshsig.QuoteToken(part))
 		}
 
 		key := strings.ToLower(strings.TrimSpace(k))
 		val := strings.TrimSpace(v)
 		val, err = unquoteOptionValue(val)
 		if err != nil {
-			return o, fmt.Errorf("option %s: %w", sshsigx.QuoteToken(key), err)
+			return o, fmt.Errorf("option %s: %w", sshsig.QuoteToken(key), err)
 		}
 
 		switch key {
@@ -196,7 +196,7 @@ func parseOptions(s string) (Options, error) {
 			}
 			o.ValidBefore = &t
 		default:
-			return o, fmt.Errorf("unsupported option %s", sshsigx.QuoteToken(k))
+			return o, fmt.Errorf("unsupported option %s", sshsig.QuoteToken(k))
 		}
 	}
 	if o.ValidAfter != nil && o.ValidBefore != nil && !o.ValidBefore.After(*o.ValidAfter) {

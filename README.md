@@ -15,8 +15,10 @@ related to SSHSIG itself, `ssh-sign` is dedicated to SSHSIG. It attempts to
 provide a simpler user interface, informative output/error messages, including
 optional JSON output for scripting purposes.
 
-[hiddeco/sshsig](https://github.com/hiddeco/sshsig) is used for the protocol
-itself (thanks!), since SSHSIG is not supported by `golang.org/x/crypto` yet.
+The `golang.org/x/crypto` module does not support SSHSIG, so `ssh-sign`
+implements the protocol in `pkg/sshsig` using `golang.org/x/crypto/ssh` and the
+standard library. Compatibility is tested by signing and verifying with both
+`ssh-sign` and `ssh-keygen`.
 
 
 ## Disclaimer

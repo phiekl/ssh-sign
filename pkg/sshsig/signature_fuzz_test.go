@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-package sshsigx
+package sshsig
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -28,7 +27,7 @@ func FuzzSignatureRead(f *testing.F) {
 		f.Fatalf("creating signature: %v", err)
 	}
 
-	f.Add(sshsig.Armor(sig))
+	f.Add(Armor(sig))
 	f.Add([]byte(""))
 	f.Add([]byte("-----BEGIN SSH SIGNATURE-----\n-----END SSH SIGNATURE-----\n"))
 	f.Add([]byte("not a signature\n"))

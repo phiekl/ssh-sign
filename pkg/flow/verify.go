@@ -11,7 +11,7 @@ import (
 
 	"pxy.se/go/ssh-sign/pkg/allowedsigners"
 	"pxy.se/go/ssh-sign/pkg/cli"
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type VerifyOpts struct {
@@ -72,7 +72,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		return nil, []error{fmt.Errorf("failed parsing allowed signers file: %v", err)}
 	}
 
-	sig, err := sshsigx.SignatureRead(opts.SignatureFile)
+	sig, err := sshsig.SignatureRead(opts.SignatureFile)
 	if err != nil {
 		return nil, []error{err}
 	}
@@ -169,7 +169,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		res.Principal = opts.Principal
 	}
 
-	if err := sshsigx.SignatureVerify(opts.VerifyFile, sig); err == nil {
+	if err := sshsig.SignatureVerify(opts.VerifyFile, sig); err == nil {
 		res.Verification = "valid"
 	} else {
 		res.Verification = "invalid"

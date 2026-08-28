@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/pkg/cli"
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type CheckOpts struct {
@@ -62,13 +62,13 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	}
 
 	if !opts.NoAuthKey {
-		pk, err = sshsigx.PublicKeyLineParse(opts.AuthKey)
+		pk, err = sshsig.PublicKeyLineParse(opts.AuthKey)
 		if err != nil {
 			return nil, append(errs, fmt.Errorf("invalid authentication key: %v", err))
 		}
 	}
 
-	sig, err := sshsigx.SignatureRead(opts.SignatureFile)
+	sig, err := sshsig.SignatureRead(opts.SignatureFile)
 	if err != nil {
 		return nil, append(errs, err)
 	}
@@ -76,13 +76,13 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	res := CheckResult{}
 	if opts.NoAuthKey {
 		res.Authentication = "disabled"
-	} else if sshsigx.PublicKeyEqual(pk, sig.PublicKey) {
+	} else if sshsig.PublicKeyEqual(pk, sig.PublicKey) {
 		res.Authentication = "valid"
 	} else {
 		res.Authentication = "invalid"
 		errs = append(errs, fmt.Errorf(
 			"signature was created by public key %q (expected %q)",
-			sshsigx.PublicKeyString(sig.PublicKey), sshsigx.PublicKeyString(pk),
+			sshsig.PublicKeyString(sig.PublicKey), sshsig.PublicKeyString(pk),
 		))
 	}
 
@@ -97,7 +97,7 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		))
 	}
 
-	if err := sshsigx.SignatureVerify(opts.VerifyFile, sig); err == nil {
+	if err := sshsig.SignatureVerify(opts.VerifyFile, sig); err == nil {
 		res.Verification = "valid"
 	} else {
 		res.Verification = "invalid"

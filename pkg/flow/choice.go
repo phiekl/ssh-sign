@@ -7,7 +7,7 @@ package flow
 import (
 	"fmt"
 
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 func CheckNamespace(namespace string, noNamespace bool) error {
@@ -29,7 +29,7 @@ func CheckAuthKey(authKey string, noAuthKey bool) error {
 	}
 
 	if authKey != "" {
-		if _, err := sshsigx.PublicKeyLineParse(authKey); err != nil {
+		if _, err := sshsig.PublicKeyLineParse(authKey); err != nil {
 			return fmt.Errorf("invalid authentication key: %v", err)
 		}
 	}
@@ -37,7 +37,7 @@ func CheckAuthKey(authKey string, noAuthKey bool) error {
 }
 
 func CheckSignKey(signKey string) error {
-	if _, err := sshsigx.PublicKeyLineParse(signKey); err != nil {
+	if _, err := sshsig.PublicKeyLineParse(signKey); err != nil {
 		return fmt.Errorf("invalid signing key: %v", err)
 	}
 	return nil

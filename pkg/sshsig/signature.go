@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-package sshsigx
+package sshsig
 
 import (
 	"bytes"
@@ -12,19 +12,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
 )
-
-type signatureWire struct {
-	MagicPreamble [6]byte
-	Version       uint32
-	PublicKey     string
-	Namespace     string
-	Reserved      string
-	HashAlgorithm string
-	Signature     string
-}
 
 // maxSignatureArmorSize bounds malformed or hostile input while leaving ample
 // room for certificate-backed signatures. It matches OpenSSH's hard sshbuf
@@ -32,7 +21,7 @@ type signatureWire struct {
 const maxSignatureArmorSize = 0x8000000
 
 // SignatureCreate creates a signature of the input data.
-func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signature, error) {
+func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*Signature, error) {
 	if isRSACertificate(signer.PublicKey()) {
 		algorithmSigner, ok := signer.(ssh.AlgorithmSigner)
 		if !ok {
@@ -40,7 +29,7 @@ func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signat
 		}
 		signer = rsaSHA512Signer{Signer: signer, algorithmSigner: algorithmSigner}
 	}
-	sig, err := sshsig.Sign(in, signer, sshsig.HashSHA512, ns)
+	sig, err := Sign(in, signer, HashSHA512, ns)
 	if err != nil {
 		return nil, fmt.Errorf("signing failed: %w", err)
 	}
@@ -51,11 +40,11 @@ func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*sshsig.Signat
 }
 
 // SignatureRead unarmors a signature from the input data.
-func SignatureRead(in io.Reader) (*sshsig.Signature, error) {
+func SignatureRead(in io.Reader) (*Signature, error) {
 	return signatureRead(in, maxSignatureArmorSize)
 }
 
-func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
+func signatureRead(in io.Reader, max int64) (*Signature, error) {
 	data, err := io.ReadAll(io.LimitReader(in, max+1))
 	if err != nil {
 		return nil, err
@@ -76,10 +65,10 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 		return nil, fmt.Errorf("unarmoring data failed: invalid PEM block")
 	}
 	// The prefix does not constrain a later PEM block's type.
-	if block.Type != sshsig.PEMType {
+	if block.Type != PEMType {
 		return nil, fmt.Errorf(
 			"unarmoring data failed: invalid PEM type %s: expected %q",
-			QuoteToken(block.Type), sshsig.PEMType,
+			QuoteToken(block.Type), PEMType,
 		)
 	}
 	if len(block.Headers) != 0 {
@@ -89,15 +78,11 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 		return nil, fmt.Errorf("unarmoring data failed: data found after signature")
 	}
 
-	sig, err := sshsig.ParseSignature(block.Bytes)
+	sig, err := ParseSignature(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("unarmoring data failed: %v", boundedError(err))
 	}
-	var wire signatureWire
-	if err := ssh.Unmarshal(block.Bytes, &wire); err != nil {
-		return nil, fmt.Errorf("unarmoring data failed: %v", boundedError(err))
-	}
-	if wire.Reserved != "" {
+	if sig.Reserved != "" {
 		return nil, fmt.Errorf("signature reserved field is not empty")
 	}
 	if sig.Namespace == "" {
@@ -110,7 +95,7 @@ func signatureRead(in io.Reader, max int64) (*sshsig.Signature, error) {
 	return sig, nil
 }
 
-func validateSignatureAlgorithm(sig *sshsig.Signature) error {
+func validateSignatureAlgorithm(sig *Signature) error {
 	// OpenSSH no longer accepts DSA signatures.
 	if publicKeyType(sig.PublicKey) == ssh.InsecureKeyAlgoDSA ||
 		sig.Signature.Format == ssh.InsecureKeyAlgoDSA {
@@ -152,8 +137,8 @@ func isRSACertificate(pk ssh.PublicKey) bool {
 
 // SignatureVerify checks if a signature verifies to the input data. It does
 // *not* validate the authenticity of the pubkey or namespace.
-func SignatureVerify(in io.Reader, sig *sshsig.Signature) error {
-	if err := sshsig.Verify(in, sig, sig.PublicKey, sig.HashAlgorithm, sig.Namespace); err != nil {
+func SignatureVerify(in io.Reader, sig *Signature) error {
+	if err := Verify(in, sig); err != nil {
 		err = boundedError(err)
 		if msg := err.Error(); strings.HasPrefix(msg, "ssh: ") {
 			return fmt.Errorf("%s", strings.TrimPrefix(msg, "ssh: "))
@@ -179,7 +164,7 @@ func NewSignatureDataInfo(sig *ssh.Signature) SignatureDataInfo {
 	}
 }
 
-// SignatureInfo is a human-readable representation of an sshsig.Signature.
+// SignatureInfo is a human-readable representation of a Signature.
 type SignatureInfo struct {
 	Version       uint32            `json:"version,string"`
 	PublicKey     PublicKeyInfo     `json:"public_key"`
@@ -189,7 +174,7 @@ type SignatureInfo struct {
 }
 
 // NewSignatureInfo populates a new SignatureInfo.
-func NewSignatureInfo(sig *sshsig.Signature) SignatureInfo {
+func NewSignatureInfo(sig *Signature) SignatureInfo {
 	return SignatureInfo{
 		Version:       sig.Version,
 		PublicKey:     NewPublicKeyInfo(sig.PublicKey),

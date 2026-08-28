@@ -357,3 +357,69 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 		})
 	}
 }
+
+// TestArmorMatchesOpenSSHByteForByte pins the signature file format itself:
+// ed25519 signatures are deterministic, so signing the same data with the same
+// key must produce exactly the bytes ssh-keygen writes.
+func TestArmorMatchesOpenSSHByteForByte(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	sshAdd := requireProgram(t, "ssh-add")
+	startRealSSHAgent(t)
+
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key")
+	dataPath := filepath.Join(dir, "data")
+	const data = "byte-for-byte interoperability\n"
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("writing data: %v", err)
+	}
+	keyLine := generateOpenSSHKey(t, keygen, "ed25519", key)
+
+	runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", "file", dataPath)
+	want, err := os.ReadFile(dataPath + ".sig")
+	if err != nil {
+		t.Fatalf("reading OpenSSH signature: %v", err)
+	}
+
+	runProgram(t, "", sshAdd, key)
+	stdout, stderr, code := run(t, "sign", "-f", dataPath, "-k", keyLine, "-n", "file")
+	if code != 0 {
+		t.Fatalf("signing through ssh-agent: code=%d stderr=%q", code, stderr)
+	}
+	if stdout != string(want) {
+		t.Errorf("signature =\n%s\nwant ssh-keygen's\n%s", stdout, want)
+	}
+}
+
+// TestSHA256OpenSSHInterop covers the hash algorithm ssh-keygen only uses when
+// asked for it.
+func TestSHA256OpenSSHInterop(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key")
+	dataPath := filepath.Join(dir, "data")
+	allowed := filepath.Join(dir, "allowed_signers")
+	const data = "sha256 interoperability\n"
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("writing data: %v", err)
+	}
+	keyLine := generateOpenSSHKey(t, keygen, "ed25519", key)
+	writeAllowedSigner(t, allowed, "interop@example.com", keyLine)
+
+	runProgram(t, "", keygen,
+		"-Y", "sign", "-f", key, "-n", "file", "-O", "hashalg=sha256", dataPath,
+	)
+	signature := dataPath + ".sig"
+
+	stdout, stderr, code := run(t, "verify",
+		"-a", allowed, "-f", dataPath, "-s", signature, "-n", "file", "-p", "interop@example.com",
+	)
+	if code != 0 || !strings.Contains(stdout, "verification   = valid") {
+		t.Fatalf("verifying sha256 signature: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if inspected, stderr, code := run(t, "inspect", "-s", signature); code != 0 ||
+		!strings.Contains(inspected, "sha256") {
+		t.Fatalf("sha256 signature metadata: code=%d stdout=%q stderr=%q", code, inspected, stderr)
+	}
+}

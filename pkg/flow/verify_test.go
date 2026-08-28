@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 // signed is a signature over testData together with its signer's key line.

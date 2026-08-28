@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type constraintError struct {
@@ -92,7 +92,7 @@ func (f *File) matchEntry(
 		if principal != "" && !patternListMatch(ent.Principal, principal) {
 			continue
 		}
-		if !sshsigx.PublicKeyEqual(ent.PublicKey, pk) {
+		if !sshsig.PublicKeyEqual(ent.PublicKey, pk) {
 			continue
 		}
 		candidates++

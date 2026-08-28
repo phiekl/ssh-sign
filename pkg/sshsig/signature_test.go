@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-package sshsigx
+package sshsig
 
 import (
 	"crypto/dsa"
@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -40,7 +39,7 @@ func TestSignatureRoundTrip(t *testing.T) {
 		t.Fatalf("SignatureCreate() error = %v", err)
 	}
 
-	read, err := SignatureRead(strings.NewReader(string(sshsig.Armor(sig))))
+	read, err := SignatureRead(strings.NewReader(string(Armor(sig))))
 	if err != nil {
 		t.Fatalf("SignatureRead() error = %v", err)
 	}
@@ -93,8 +92,8 @@ func TestSignatureCreateUsesSHA2ForRSACertificate(t *testing.T) {
 }
 
 func TestSignatureReadRejectsSHA1ForRSACertificate(t *testing.T) {
-	sig, err := sshsig.Sign(
-		strings.NewReader("data\n"), newRSACertificateSigner(t), sshsig.HashSHA512, "file",
+	sig, err := Sign(
+		strings.NewReader("data\n"), newRSACertificateSigner(t), HashSHA512, "file",
 	)
 	if err != nil {
 		t.Fatalf("creating legacy certificate signature: %v", err)
@@ -103,7 +102,7 @@ func TestSignatureReadRejectsSHA1ForRSACertificate(t *testing.T) {
 		t.Fatalf("legacy signature format = %q, want %q", sig.Signature.Format, ssh.KeyAlgoRSA)
 	}
 
-	_, err = SignatureRead(strings.NewReader(string(sshsig.Armor(sig))))
+	_, err = SignatureRead(strings.NewReader(string(Armor(sig))))
 	if err == nil || !strings.Contains(err.Error(), "invalid RSA signature format") {
 		t.Fatalf("SignatureRead() error = %v, want an invalid RSA signature format error", err)
 	}
@@ -124,11 +123,11 @@ func TestSignatureReadRejectsDSA(t *testing.T) {
 	}
 
 	// Bypass SignatureCreate, which rejects DSA.
-	sig, err := sshsig.Sign(strings.NewReader("data\n"), signer, sshsig.HashSHA512, "file")
+	sig, err := Sign(strings.NewReader("data\n"), signer, HashSHA512, "file")
 	if err != nil {
 		t.Fatalf("creating DSA signature: %v", err)
 	}
-	if _, err := SignatureRead(strings.NewReader(string(sshsig.Armor(sig)))); err == nil ||
+	if _, err := SignatureRead(strings.NewReader(string(Armor(sig)))); err == nil ||
 		!strings.Contains(err.Error(), `unsupported signature algorithm "ssh-dss"`) {
 		t.Fatalf("SignatureRead() error = %v, want a rejected DSA signature", err)
 	}
@@ -142,7 +141,7 @@ func craftedSignature(t *testing.T, wire signatureWire) string {
 	t.Helper()
 	copy(wire.MagicPreamble[:], []byte("SSHSIG"))
 	return string(pem.EncodeToMemory(&pem.Block{
-		Type:  sshsig.PEMType,
+		Type:  PEMType,
 		Bytes: ssh.Marshal(wire),
 	}))
 }
@@ -234,7 +233,7 @@ func TestSignatureRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignatureCreate() error = %v", err)
 	}
-	armored := string(sshsig.Armor(sig))
+	armored := string(Armor(sig))
 	block, _ := pem.Decode([]byte(armored))
 	var wire signatureWire
 	if err := ssh.Unmarshal(block.Bytes, &wire); err != nil {
@@ -242,7 +241,7 @@ func TestSignatureRead(t *testing.T) {
 	}
 	wire.Reserved = "future use"
 	nonEmptyReserved := string(pem.EncodeToMemory(&pem.Block{
-		Type:  sshsig.PEMType,
+		Type:  PEMType,
 		Bytes: ssh.Marshal(&wire),
 	}))
 

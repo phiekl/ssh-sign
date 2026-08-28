@@ -3,7 +3,6 @@ module pxy.se/go/ssh-sign
 go 1.24.0
 
 require (
-	github.com/hiddeco/sshsig v0.2.0
 	golang.org/x/crypto v0.47.0
 	pxy.se/go/argparse v0.1.7
 )

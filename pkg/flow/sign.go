@@ -10,9 +10,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hiddeco/sshsig"
 	"pxy.se/go/ssh-sign/pkg/cli"
-	"pxy.se/go/ssh-sign/pkg/sshsigx"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type SignOpts struct {
@@ -49,12 +48,12 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 		return nil, append(errs, err)
 	}
 
-	pk, err := sshsigx.PublicKeyLineParse(opts.SignKey)
+	pk, err := sshsig.PublicKeyLineParse(opts.SignKey)
 	if err != nil {
 		return nil, append(errs, cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err)))
 	}
 
-	conn, agent, err := sshsigx.AgentConnect()
+	conn, agent, err := sshsig.AgentConnect()
 	if err != nil {
 		return nil, append(errs, fmt.Errorf("failed agent connection: %v", err))
 	}
@@ -62,12 +61,12 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	// was already produced, so it is not worth aborting over.
 	defer func() { _ = conn.Close() }()
 
-	signer, err := sshsigx.AgentSigner(conn, agent, pk)
+	signer, err := sshsig.AgentSigner(conn, agent, pk)
 	if err != nil {
 		return nil, append(errs, fmt.Errorf("agent: %v", err))
 	}
 
-	sig, err := sshsigx.SignatureCreate(signer, opts.Namespace, opts.DataFile)
+	sig, err := sshsig.SignatureCreate(signer, opts.Namespace, opts.DataFile)
 	if err != nil {
 		return nil, append(errs, err)
 	}
