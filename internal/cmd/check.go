@@ -25,6 +25,9 @@ type CheckCommand struct {
 }
 
 func (c *CheckCommand) Command() (any, []error) {
+	log := commandLog(c.GlobalOpts)
+	c.commandOpts.Log = log
+
 	if c.commandOpts.NoNamespace {
 		c.commandOpts.Namespace = ""
 	}
@@ -69,6 +72,8 @@ func (c *CheckCommand) Command() (any, []error) {
 	}
 	defer func() { _ = f.Close() }()
 	c.commandOpts.VerifyFile = f
+	debugInput(log, "signature", c.signatureFile)
+	debugInput(log, "verify", c.verifyFile)
 
 	return flow.Check(&c.commandOpts)
 }

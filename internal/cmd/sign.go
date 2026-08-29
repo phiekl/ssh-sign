@@ -24,6 +24,9 @@ type SignCommand struct {
 }
 
 func (c *SignCommand) Command() (any, []error) {
+	log := commandLog(c.GlobalOpts)
+	c.commandOpts.Log = log
+
 	if err := flow.CheckSignKey(c.commandOpts.SignKey); err != nil {
 		return nil, []error{cli.MarkUsage(err)}
 	}
@@ -42,6 +45,7 @@ func (c *SignCommand) Command() (any, []error) {
 		defer func() { _ = f.Close() }()
 		c.commandOpts.DataFile = f
 	}
+	debugInput(log, "data", c.dataFile)
 
 	return flow.Sign(&c.commandOpts)
 }

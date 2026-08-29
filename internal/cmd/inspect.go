@@ -23,6 +23,9 @@ type InspectCommand struct {
 }
 
 func (c *InspectCommand) Command() (any, []error) {
+	log := commandLog(c.GlobalOpts)
+	c.commandOpts.Log = log
+
 	if c.signatureFile == "" {
 		c.commandOpts.SignatureFile = os.Stdin
 	} else {
@@ -37,6 +40,8 @@ func (c *InspectCommand) Command() (any, []error) {
 		defer func() { _ = f.Close() }()
 		c.commandOpts.SignatureFile = f
 	}
+	debugInput(log, "signature", c.signatureFile)
+
 	return flow.Inspect(&c.commandOpts)
 }
 

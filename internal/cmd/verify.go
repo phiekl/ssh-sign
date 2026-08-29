@@ -27,6 +27,9 @@ type VerifyCommand struct {
 }
 
 func (c *VerifyCommand) Command() (any, []error) {
+	log := commandLog(c.GlobalOpts)
+	c.commandOpts.Log = log
+
 	if c.timestamp != "" {
 		ts, err := helper.ParseTimestamp(c.timestamp)
 		if err != nil {
@@ -73,6 +76,9 @@ func (c *VerifyCommand) Command() (any, []error) {
 	}
 	defer func() { _ = verifyFile.Close() }()
 	c.commandOpts.VerifyFile = verifyFile
+	debugInput(log, "allowed signers", c.allowedSignersFile)
+	debugInput(log, "signature", c.signatureFile)
+	debugInput(log, "verify", c.verifyFile)
 
 	return flow.Verify(&c.commandOpts)
 }

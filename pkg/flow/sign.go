@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -16,6 +17,7 @@ import (
 
 type SignOpts struct {
 	DataFile  io.Reader
+	Log       *slog.Logger
 	SignKey   string
 	Namespace string
 }
@@ -52,8 +54,11 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	if err != nil {
 		return nil, append(errs, cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err)))
 	}
+	cli.Debug(opts.Log, cli.LevelDebug1, "sign: signing",
+		"namespace", opts.Namespace, keyAttr("key", pk),
+	)
 
-	conn, agent, err := sshsig.AgentConnect()
+	conn, agent, err := sshsig.AgentConnect(opts.Log)
 	if err != nil {
 		return nil, append(errs, fmt.Errorf("failed agent connection: %v", err))
 	}
@@ -61,7 +66,7 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	// was already produced, so it is not worth aborting over.
 	defer func() { _ = conn.Close() }()
 
-	signer, err := sshsig.AgentSigner(conn, agent, pk)
+	signer, err := sshsig.AgentSigner(opts.Log, conn, agent, pk)
 	if err != nil {
 		return nil, append(errs, fmt.Errorf("agent: %v", err))
 	}
@@ -70,6 +75,9 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	if err != nil {
 		return nil, append(errs, err)
 	}
+	cli.Debug(opts.Log, cli.LevelDebug1, "sign: signed",
+		"format", sig.Signature.Format, "hash", sig.HashAlgorithm,
+	)
 
 	res := SignResult{Signature: sig}
 	return &res, errs

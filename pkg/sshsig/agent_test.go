@@ -5,9 +5,11 @@
 package sshsig
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"log/slog"
 	"net"
 	"path/filepath"
 	"strings"
@@ -72,14 +74,14 @@ func listenAgent(t *testing.T, served agent.Agent) string {
 func TestAgentConnectFailures(t *testing.T) {
 	t.Run("missing environment", func(t *testing.T) {
 		t.Setenv("SSH_AUTH_SOCK", "")
-		if _, _, err := AgentConnect(); err == nil || !strings.Contains(err.Error(), "not set") {
+		if _, _, err := AgentConnect(nil); err == nil || !strings.Contains(err.Error(), "not set") {
 			t.Fatalf("AgentConnect() error = %v, want SSH_AUTH_SOCK error", err)
 		}
 	})
 
 	t.Run("missing socket", func(t *testing.T) {
 		t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "missing.sock"))
-		if _, _, err := AgentConnect(); err == nil || !strings.Contains(err.Error(), "failed to connect") {
+		if _, _, err := AgentConnect(nil); err == nil || !strings.Contains(err.Error(), "failed to connect") {
 			t.Fatalf("AgentConnect() error = %v, want connection error", err)
 		}
 	})
@@ -89,14 +91,14 @@ func TestAgentSignerFailures(t *testing.T) {
 	key := newSigner(t).PublicKey()
 
 	t.Run("listing", func(t *testing.T) {
-		if _, err := AgentSigner(nil, failingListAgent{}, key); err == nil ||
+		if _, err := AgentSigner(nil, nil, failingListAgent{}, key); err == nil ||
 			!strings.Contains(err.Error(), "failed listing keys") {
 			t.Fatalf("AgentSigner() error = %v, want listing error", err)
 		}
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		if _, err := AgentSigner(nil, agent.NewKeyring(), key); err == nil ||
+		if _, err := AgentSigner(nil, nil, agent.NewKeyring(), key); err == nil ||
 			!strings.Contains(err.Error(), "no keys found") {
 			t.Fatalf("AgentSigner() error = %v, want empty-agent error", err)
 		}
@@ -111,7 +113,7 @@ func TestAgentSignerFailures(t *testing.T) {
 		if err := keyring.Add(agent.AddedKey{PrivateKey: privateKey}); err != nil {
 			t.Fatalf("adding key: %v", err)
 		}
-		if _, err := AgentSigner(nil, keyring, key); err == nil || !strings.Contains(err.Error(), "no key matched") {
+		if _, err := AgentSigner(nil, nil, keyring, key); err == nil || !strings.Contains(err.Error(), "no key matched") {
 			t.Fatalf("AgentSigner() error = %v, want unmatched-key error", err)
 		}
 	})
@@ -132,12 +134,12 @@ func TestAgentDisconnectDuringListing(t *testing.T) {
 	}()
 
 	t.Setenv("SSH_AUTH_SOCK", socket)
-	conn, client, err := AgentConnect()
+	conn, client, err := AgentConnect(nil)
 	if err != nil {
 		t.Fatalf("AgentConnect() error = %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	if _, err := AgentSigner(conn, client, newSigner(t).PublicKey()); err == nil ||
+	if _, err := AgentSigner(nil, conn, client, newSigner(t).PublicKey()); err == nil ||
 		!strings.Contains(err.Error(), "failed listing keys") {
 		t.Fatalf("AgentSigner() error = %v, want disconnect error", err)
 	}
@@ -160,12 +162,12 @@ func TestAgentMalformedReplyDuringListing(t *testing.T) {
 	}()
 
 	t.Setenv("SSH_AUTH_SOCK", socket)
-	conn, client, err := AgentConnect()
+	conn, client, err := AgentConnect(nil)
 	if err != nil {
 		t.Fatalf("AgentConnect() error = %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	if _, err := AgentSigner(conn, client, newSigner(t).PublicKey()); err == nil ||
+	if _, err := AgentSigner(nil, conn, client, newSigner(t).PublicKey()); err == nil ||
 		!strings.Contains(err.Error(), "failed listing keys") {
 		t.Fatalf("AgentSigner() error = %v, want malformed-reply error", err)
 	}
@@ -187,7 +189,7 @@ func TestNonresponsiveAgentCanBeInterruptedByClosingConnection(t *testing.T) {
 	}()
 
 	t.Setenv("SSH_AUTH_SOCK", socket)
-	conn, client, err := AgentConnect()
+	conn, client, err := AgentConnect(nil)
 	if err != nil {
 		t.Fatalf("AgentConnect() error = %v", err)
 	}
@@ -196,7 +198,7 @@ func TestNonresponsiveAgentCanBeInterruptedByClosingConnection(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := AgentSigner(conn, client, newSigner(t).PublicKey())
+		_, err := AgentSigner(nil, conn, client, newSigner(t).PublicKey())
 		done <- err
 	}()
 	_ = conn.Close()
@@ -226,7 +228,7 @@ func TestWedgedAgentTimesOutWhileListing(t *testing.T) {
 	}()
 
 	t.Setenv("SSH_AUTH_SOCK", socket)
-	conn, client, err := AgentConnect()
+	conn, client, err := AgentConnect(nil)
 	if err != nil {
 		t.Fatalf("AgentConnect() error = %v", err)
 	}
@@ -236,7 +238,7 @@ func TestWedgedAgentTimesOutWhileListing(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := agentSigner(conn, client, newSigner(t).PublicKey(), 100*time.Millisecond)
+		_, err := agentSigner(nil, conn, client, newSigner(t).PublicKey(), 100*time.Millisecond)
 		done <- err
 	}()
 	select {
@@ -260,13 +262,13 @@ func TestAgentSignerClearsTheDeadline(t *testing.T) {
 	}
 	t.Setenv("SSH_AUTH_SOCK", listenAgent(t, keyring))
 
-	conn, client, err := AgentConnect()
+	conn, client, err := AgentConnect(nil)
 	if err != nil {
 		t.Fatalf("AgentConnect() error = %v", err)
 	}
 	defer func() { _ = conn.Close() }()
 
-	signer, err := agentSigner(conn, client, publicKey, 50*time.Millisecond)
+	signer, err := agentSigner(nil, conn, client, publicKey, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("agentSigner() error = %v", err)
 	}
@@ -288,17 +290,60 @@ func TestAgentSigningFailureIsReturned(t *testing.T) {
 	socket := listenAgent(t, failingSignAgent{Agent: keyring})
 	t.Setenv("SSH_AUTH_SOCK", socket)
 
-	conn, client, err := AgentConnect()
+	conn, client, err := AgentConnect(nil)
 	if err != nil {
 		t.Fatalf("AgentConnect() error = %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	signer, err := AgentSigner(conn, client, publicKey)
+	signer, err := AgentSigner(nil, conn, client, publicKey)
 	if err != nil {
 		t.Fatalf("AgentSigner() error = %v", err)
 	}
 	if _, err := SignatureCreate(signer, "file", strings.NewReader("data\n")); err == nil ||
 		!strings.Contains(err.Error(), "failed to sign challenge") {
 		t.Fatalf("SignatureCreate() error = %v, want signing error", err)
+	}
+}
+
+func TestAgentLogsItsProgress(t *testing.T) {
+	publicKey, privateKey, err := newEd25519Key()
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	keyring := agent.NewKeyring()
+	if err := keyring.Add(agent.AddedKey{PrivateKey: privateKey}); err != nil {
+		t.Fatalf("adding key: %v", err)
+	}
+	socket := listenAgent(t, keyring)
+	t.Setenv("SSH_AUTH_SOCK", socket)
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: levelDebug3}))
+
+	conn, client, err := AgentConnect(log)
+	if err != nil {
+		t.Fatalf("AgentConnect() error = %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := AgentSigner(log, conn, client, publicKey); err != nil {
+		t.Fatalf("AgentSigner() error = %v", err)
+	}
+
+	for _, want := range []string{socket, "keys=1", ssh.FingerprintSHA256(publicKey)} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("agent logged %q, want it to mention %q", buf.String(), want)
+		}
+	}
+}
+
+func TestAgentAcceptsNoLogger(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", listenAgent(t, agent.NewKeyring()))
+	conn, client, err := AgentConnect(nil)
+	if err != nil {
+		t.Fatalf("AgentConnect() error = %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := AgentSigner(nil, conn, client, newSigner(t).PublicKey()); err == nil {
+		t.Fatal("AgentSigner() error = nil, want an empty-agent error")
 	}
 }

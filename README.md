@@ -56,15 +56,43 @@ $ ssh-sign --help
 usage: ssh-sign [option].. <command> [command option]..
 
 commands:
-  inspect       Show signature details
-  sign          Sign data with specified public key and namespace
-  verify        Verify signed data using allowed signers files
-  check         Verify signed data, with optional public key/namespace validation
+  inspect   Show signature details
+  sign      Sign data with specified public key and namespace
+  verify    Verify signed data using allowed signers files
+  check     Check signed data, with optional public key/namespace validation
 
 options:
-  -h, --help   display this help text and exit
-  -j, --json   enable JSON output
+  -h, --help            display this help text and exit
+  -j, --json            enable JSON output
+  -v, --verbose count   write debug output to stderr, repeatable up to -vvv
 ```
+
+
+## Debug output
+
+`-v` writes debug output to stderr. Repeat it for more detail, up to `-vvv`:
+
+| level | contents |
+| --- | --- |
+| `-v` | what is signed or verified, the agent connection and the outcome of each check |
+| `-vv` | which files are read, the parsed allowed signers count and the agent key listing |
+| `-vvv` | every allowed signers entry with its constraints, and every key the agent offers |
+
+```
+$ ssh-sign -vv sign -k "$(cat key.pub)" -f data > data.sig
+debug1: running command command=sign json=false
+debug2: reading input role=data path=data
+debug1: sign: signing namespace=file key.type=ssh-ed25519 key.fingerprint=SHA256:LyEOd2jBAC/rJ6fwD0FVOBJTLJsKorRx5bjfBeZ0FM8
+debug1: agent: connecting socket=/run/user/1000/keyring/ssh timeout=30s
+debug1: agent: connected socket=/run/user/1000/keyring/ssh
+debug2: agent: listing keys timeout=30s
+debug2: agent: listed keys keys=1
+debug1: agent: matched key type=ssh-ed25519 fingerprint=SHA256:LyEOd2jBAC/rJ6fwD0FVOBJTLJsKorRx5bjfBeZ0FM8
+debug1: sign: signed format=ssh-ed25519 hash=sha512
+```
+
+> [!NOTE]
+> Debug values are quoted and terminal controls escaped.
 
 
 ## Sub commands

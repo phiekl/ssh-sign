@@ -27,6 +27,12 @@ func main() {
 		"enable JSON output",
 	)
 
+	p.CountVarP(
+		&opts.Verbose,
+		"verbose", "v",
+		"write debug output to stderr, repeatable up to -vvv",
+	)
+
 	p.CommandInit(
 		&opts.Command,
 		&opts.CommandName,
@@ -61,6 +67,11 @@ func main() {
 		exitForParserSentinel(err)
 		dieUsage("usage", err)
 	}
+	// Keep debug output separate from results.
+	opts.Log = cli.NewLogger(os.Stderr, opts.Verbose)
+	cli.Debug(opts.Log, cli.LevelDebug1, "running command",
+		"command", opts.CommandName, "json", opts.JSON,
+	)
 
 	commandOpts := opts.CommandOpts
 	if len(commandOpts) == 0 {

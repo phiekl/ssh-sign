@@ -999,3 +999,156 @@ func TestCheckDoesNotReuseTheNamespaceKey(t *testing.T) {
 		t.Errorf("designation = %v, want %q", result["designation"], "disabled")
 	}
 }
+
+func TestHelpListsTheVerboseFlag(t *testing.T) {
+	stdout, stderr, code := run(t, "--help")
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "-v, --verbose") {
+		t.Errorf("help output is missing the verbose flag:\n%s", stdout)
+	}
+}
+
+func TestVerboseLevelsAddDetail(t *testing.T) {
+	f := newFixture(t, "file")
+
+	for name, tt := range map[string]struct {
+		flags  []string
+		want   []string
+		unwant []string
+	}{
+		"silent": {
+			unwant: []string{"debug1: ", "debug2: ", "debug3: "},
+		},
+		"debug1": {
+			flags:  []string{"-v"},
+			want:   []string{"debug1: "},
+			unwant: []string{"debug2: ", "debug3: "},
+		},
+		"debug2": {
+			flags:  []string{"-vv"},
+			want:   []string{"debug1: ", "debug2: "},
+			unwant: []string{"debug3: "},
+		},
+		"debug3": {
+			flags: []string{"-vvv"},
+			want:  []string{"debug1: ", "debug2: ", "debug3: "},
+		},
+		"repeated separately": {
+			flags: []string{"-v", "-v", "-v"},
+			want:  []string{"debug1: ", "debug2: ", "debug3: "},
+		},
+		"long form": {
+			flags:  []string{"--verbose"},
+			want:   []string{"debug1: "},
+			unwant: []string{"debug2: "},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			args := append(append([]string{}, tt.flags...),
+				"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
+			)
+			stdout, stderr, code := run(t, args...)
+			if code != 0 {
+				t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+			}
+			if !strings.Contains(stdout, "verification   = valid") {
+				t.Errorf("stdout = %q, want the usual result", stdout)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+				}
+			}
+			for _, unwant := range tt.unwant {
+				if strings.Contains(stderr, unwant) {
+					t.Errorf("stderr = %q, want it free of %q", stderr, unwant)
+				}
+			}
+		})
+	}
+}
+
+func TestVerboseLogsTheAgentSocket(t *testing.T) {
+	key := startAgent(t)
+	socket := os.Getenv("SSH_AUTH_SOCK")
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data")
+	if err := os.WriteFile(data, []byte("signed by the CLI\n"), 0o600); err != nil {
+		t.Fatalf("writing data: %v", err)
+	}
+
+	stdout, stderr, code := run(t, "-v", "sign", "-f", data, "-k", key)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "-----BEGIN SSH SIGNATURE-----\n") {
+		t.Errorf("stdout = %q, want only the armored signature", stdout)
+	}
+	for _, want := range []string{"agent: connected", "socket=" + socket} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+		}
+	}
+}
+
+func TestVerboseKeepsJSONOnStdout(t *testing.T) {
+	f := newFixture(t, "file")
+
+	stdout, stderr, code := run(t,
+		"-vvv", "-j", "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
+	)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if decoded := decodeJSON(t, stdout); decoded["result"] == nil {
+		t.Errorf("output %q is missing the result key", stdout)
+	}
+	if !strings.Contains(stderr, "debug3: ") {
+		t.Errorf("stderr = %q, want debug output", stderr)
+	}
+}
+
+func TestVerboseOutputCarriesNoTerminalEscapes(t *testing.T) {
+	f := newFixture(t, "file"+string(rune(0x1b))+"]0;PWNED"+string(rune(0x07)))
+
+	_, stderr, code := run(t, "-vvv", "inspect", "-s", f.signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "inspect: read signature") {
+		t.Fatalf("stderr = %q, want the signature reported", stderr)
+	}
+	if hasRawControl(stderr) {
+		t.Errorf("stderr = %q, want no raw control characters", stderr)
+	}
+}
+
+func TestVerboseNamesTheInputSource(t *testing.T) {
+	f := newFixture(t, "file")
+
+	_, stderr, code := run(t, "-vv", "inspect", "-s", f.signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if want := "reading input role=signature path=" + f.signature; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+	}
+
+	signature, err := os.ReadFile(f.signature)
+	if err != nil {
+		t.Fatalf("reading signature: %v", err)
+	}
+	_, stderr, code = runWithInput(t, string(signature), "-vv", "inspect")
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if want := "reading input role=signature source=stdin"; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+	}
+	// Stdin has no path.
+	if strings.Contains(stderr, "path=") {
+		t.Errorf("stderr = %q, want no path reported for stdin", stderr)
+	}
+}

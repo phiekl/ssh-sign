@@ -7,6 +7,7 @@ package flow
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"pxy.se/go/ssh-sign/pkg/allowedsigners"
@@ -16,6 +17,7 @@ import (
 
 type VerifyOpts struct {
 	AllowedSignersFile io.Reader
+	Log                *slog.Logger
 	Namespace          string
 	NoNamespace        bool
 	Principal          string
@@ -66,16 +68,31 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	if timestamp.IsZero() {
 		timestamp = time.Now()
 	}
+	cli.Debug(opts.Log, cli.LevelDebug1, "verify: verifying",
+		"namespace", opts.Namespace,
+		"no_namespace", opts.NoNamespace,
+		"principal", opts.Principal,
+		"timestamp", timestamp.Format(time.RFC3339),
+	)
 
 	parsed, err := allowedsigners.Parse(opts.AllowedSignersFile)
 	if err != nil {
 		return nil, []error{fmt.Errorf("failed parsing allowed signers file: %v", err)}
+	}
+	cli.Debug(opts.Log, cli.LevelDebug2, "verify: parsed allowed signers",
+		"entries", len(parsed.Entries),
+	)
+	for i := range parsed.Entries {
+		cli.Debug(opts.Log, cli.LevelDebug3, "verify: allowed signers entry",
+			entryAttr("entry", &parsed.Entries[i]),
+		)
 	}
 
 	sig, err := sshsig.SignatureRead(opts.SignatureFile)
 	if err != nil {
 		return nil, []error{err}
 	}
+	debugSignature(opts.Log, "verify", sig)
 
 	// Run every check so failures still include a partial result.
 	res := VerifyResult{Namespace: sig.Namespace}
@@ -107,6 +124,19 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	default:
 		ent, err = parsed.MatchEntry(
 			sig.PublicKey, opts.Principal, sig.Namespace, timestamp,
+		)
+	}
+	switch {
+	case err != nil:
+		cli.Debug(opts.Log, cli.LevelDebug1, "verify: allowed signers rejected the signer",
+			"reason", err,
+		)
+	case ent == nil:
+		cli.Debug(opts.Log, cli.LevelDebug1, "verify: no allowed signers entry matched")
+	default:
+		cli.Debug(opts.Log, cli.LevelDebug1, "verify: matched allowed signers entry",
+			"line", ent.Line, "principal", ent.Principal,
+			"namespace_restricted", restricted,
 		)
 	}
 	// Reject a namespace that neither the invocation nor allowed signers checked.
@@ -175,6 +205,11 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		res.Verification = "invalid"
 		errs = append(errs, err)
 	}
+	cli.Debug(opts.Log, cli.LevelDebug1, "verify: verified",
+		"authentication", res.Authentication,
+		"designation", res.Designation,
+		"verification", res.Verification,
+	)
 
 	return &res, errs
 }

@@ -7,12 +7,14 @@ package flow
 import (
 	"fmt"
 	"io"
+	"log/slog"
 
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type InspectOpts struct {
+	Log           *slog.Logger
 	SignatureFile io.Reader
 }
 
@@ -62,6 +64,7 @@ func Inspect(opts *InspectOpts) (*InspectResult, []error) {
 	if err != nil {
 		return nil, append(errs, err)
 	}
+	debugSignature(opts.Log, "inspect", sig)
 
 	res := InspectResult{sshsig.NewSignatureInfo(sig)}
 	return &res, errs

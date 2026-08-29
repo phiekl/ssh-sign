@@ -7,6 +7,7 @@ package flow
 import (
 	"fmt"
 	"io"
+	"log/slog"
 
 	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -15,6 +16,7 @@ import (
 
 type CheckOpts struct {
 	AuthKey       string
+	Log           *slog.Logger
 	Namespace     string
 	NoAuthKey     bool
 	NoNamespace   bool
@@ -66,12 +68,14 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		if err != nil {
 			return nil, append(errs, fmt.Errorf("invalid authentication key: %v", err))
 		}
+		cli.Debug(opts.Log, cli.LevelDebug2, "check: expecting", keyAttr("key", pk))
 	}
 
 	sig, err := sshsig.SignatureRead(opts.SignatureFile)
 	if err != nil {
 		return nil, append(errs, err)
 	}
+	debugSignature(opts.Log, "check", sig)
 
 	res := CheckResult{}
 	if opts.NoAuthKey {
@@ -103,6 +107,11 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		res.Verification = "invalid"
 		errs = append(errs, err)
 	}
+	cli.Debug(opts.Log, cli.LevelDebug1, "check: checked",
+		"authentication", res.Authentication,
+		"designation", res.Designation,
+		"verification", res.Verification,
+	)
 
 	return &res, errs
 }
