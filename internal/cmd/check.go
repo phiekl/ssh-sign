@@ -75,6 +75,9 @@ func (c *CheckCommand) Command() (any, []error) {
 	debugInput(log, "signature", c.signatureFile)
 	debugInput(log, "verify", c.verifyFile)
 
+	if err := restrict(log); err != nil {
+		return nil, []error{err}
+	}
 	return flow.Check(&c.commandOpts)
 }
 

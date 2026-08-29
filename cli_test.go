@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,10 @@ const otherKeyLine = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH+xLwvXBGWKOTvJcDkfLm
 
 // binary is the ssh-sign executable built once for the whole test binary.
 var binary string
+
+var landlockEnabledLine = regexp.MustCompile(
+	`(?m)^debug1: landlock: enabled effective_abi=[1-9][0-9]* kernel_abi=[1-9][0-9]* threads=all best_effort=true$`,
+)
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "ssh-sign-test")
@@ -755,12 +760,15 @@ func TestSignValidatesKeyBeforeOpeningFIFO(t *testing.T) {
 	if out, err := exec.Command(mkfifo, "-m", "600", fifo).CombinedOutput(); err != nil {
 		t.Skipf("cannot create FIFO: %v: %s", err, out)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	const timeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, "sign", "-k", "nonsense", "-f", fifo)
 	out, err := command.CombinedOutput()
 	if ctx.Err() != nil {
-		t.Fatal("sign blocked opening the FIFO before validating its key")
+		t.Fatalf("sign did not complete within %s; possible FIFO-before-key validation regression (output=%q)",
+			timeout, out,
+		)
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
@@ -768,6 +776,18 @@ func TestSignValidatesKeyBeforeOpeningFIFO(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "invalid signing key") {
 		t.Errorf("output = %q, want an invalid signing key error", out)
+	}
+}
+
+func TestSignRejectsAKeyTheAgentDoesNotHold(t *testing.T) {
+	startAgent(t)
+
+	_, stderr, code := run(t, "sign", "-k", otherKeyLine)
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "no key matched") {
+		t.Errorf("stderr = %q, want an unmatched-key error", stderr)
 	}
 }
 
@@ -1093,6 +1113,26 @@ func TestVerboseLogsTheAgentSocket(t *testing.T) {
 	}
 }
 
+func TestSignAppliesLandlock(t *testing.T) {
+	key := startAgent(t)
+
+	_, stderr, code := runWithInput(t, "signed by the CLI\n", "-vv", "sign", "-k", key)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if want := "debug2: landlock: configuring policy_abi=10 best_effort=true"; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+	}
+	doneAt := strings.Index(stderr, "debug1: landlock: unavailable best_effort=true")
+	if enabled := landlockEnabledLine.FindStringIndex(stderr); enabled != nil {
+		doneAt = enabled[0]
+	}
+	signingAt := strings.Index(stderr, "debug1: sign: signing")
+	if doneAt < 0 || signingAt < 0 || doneAt > signingAt {
+		t.Errorf("stderr = %q, want Landlock completed before signing", stderr)
+	}
+}
+
 func TestVerboseKeepsJSONOnStdout(t *testing.T) {
 	f := newFixture(t, "file")
 
@@ -1150,5 +1190,51 @@ func TestVerboseNamesTheInputSource(t *testing.T) {
 	// Stdin has no path.
 	if strings.Contains(stderr, "path=") {
 		t.Errorf("stderr = %q, want no path reported for stdin", stderr)
+	}
+}
+
+func TestVerboseLogsLandlock(t *testing.T) {
+	f := newFixture(t, "file")
+
+	_, stderr, code := run(t, "-vv", "inspect", "-s", f.signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr,
+		"debug2: landlock: configuring policy_abi=10 best_effort=true",
+	) {
+		t.Errorf("stderr = %q, want Landlock setup reported", stderr)
+	}
+	enabled := landlockEnabledLine.MatchString(stderr)
+	unavailable := strings.Contains(stderr, "debug1: landlock: unavailable best_effort=true")
+	if enabled == unavailable {
+		t.Errorf("stderr = %q, want exactly one complete enabled or unavailable line", stderr)
+	}
+}
+
+// TestLandlockKeepsTimestampsLocal ensures zone data is loaded before restricting.
+func TestLandlockKeepsTimestampsLocal(t *testing.T) {
+	const zone = "Etc/GMT-12" // UTC+12, as POSIX inverts the sign
+	if _, err := time.LoadLocation(zone); err != nil {
+		t.Skipf("time zone %q is unavailable: %v", zone, err)
+	}
+	t.Setenv("TZ", zone)
+
+	f := newFixture(t, "file")
+	f.writeAllowed(t, f.principal+` valid-after="20260101" `+f.keyLine())
+
+	// Valid after local midnight, but not midnight UTC.
+	stdout, stderr, code := run(t,
+		"-v", "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature,
+		"-n", "file", "-p", f.principal, "-t", "2025-12-31T18:00:00Z",
+	)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if strings.Contains(stderr, "debug1: landlock: unavailable best_effort=true") {
+		t.Skip("the exercised CLI reports that landlock is unavailable")
+	}
+	if !strings.Contains(stdout, "verification   = valid") {
+		t.Errorf("stdout = %q, want a valid verification", stdout)
 	}
 }

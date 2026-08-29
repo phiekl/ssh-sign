@@ -11,15 +11,19 @@ import (
 )
 
 func requireReader(r io.Reader, name string) error {
-	missing := r == nil
-	if !missing {
-		switch v := reflect.ValueOf(r); v.Kind() {
-		case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
-			missing = v.IsNil()
-		}
-	}
-	if missing {
+	if isNil(r) {
 		return fmt.Errorf("%s is required", name)
 	}
 	return nil
+}
+
+func isNil(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch v := reflect.ValueOf(value); v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	}
+	return false
 }

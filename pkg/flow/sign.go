@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
@@ -18,8 +19,8 @@ import (
 type SignOpts struct {
 	DataFile  io.Reader
 	Log       *slog.Logger
-	SignKey   string
 	Namespace string
+	Signer    ssh.Signer
 }
 
 type SignResult struct {
@@ -49,29 +50,18 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	if err := requireReader(opts.DataFile, "data file"); err != nil {
 		return nil, append(errs, err)
 	}
-
-	pk, err := sshsig.PublicKeyLineParse(opts.SignKey)
-	if err != nil {
-		return nil, append(errs, cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err)))
+	if isNil(opts.Signer) {
+		return nil, append(errs, fmt.Errorf("signer is required"))
+	}
+	pk := opts.Signer.PublicKey()
+	if isNil(pk) {
+		return nil, append(errs, fmt.Errorf("signer public key is required"))
 	}
 	cli.Debug(opts.Log, cli.LevelDebug1, "sign: signing",
 		"namespace", opts.Namespace, keyAttr("key", pk),
 	)
 
-	conn, agent, err := sshsig.AgentConnect(opts.Log)
-	if err != nil {
-		return nil, append(errs, fmt.Errorf("failed agent connection: %v", err))
-	}
-	// A failure to hand back the socket says nothing about the signature that
-	// was already produced, so it is not worth aborting over.
-	defer func() { _ = conn.Close() }()
-
-	signer, err := sshsig.AgentSigner(opts.Log, conn, agent, pk)
-	if err != nil {
-		return nil, append(errs, fmt.Errorf("agent: %v", err))
-	}
-
-	sig, err := sshsig.SignatureCreate(signer, opts.Namespace, opts.DataFile)
+	sig, err := sshsig.SignatureCreate(opts.Signer, opts.Namespace, opts.DataFile)
 	if err != nil {
 		return nil, append(errs, err)
 	}

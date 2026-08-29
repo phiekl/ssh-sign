@@ -42,6 +42,9 @@ func (c *InspectCommand) Command() (any, []error) {
 	}
 	debugInput(log, "signature", c.signatureFile)
 
+	if err := restrict(log); err != nil {
+		return nil, []error{err}
+	}
 	return flow.Inspect(&c.commandOpts)
 }
 

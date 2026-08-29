@@ -30,6 +30,23 @@ In JSON mode, runtime errors are written to stdout under `error` before exiting
 `1`.
 
 
+## Sandboxing
+
+On Linux, each command opens its inputs and then uses Landlock ABI V10 via
+[go-landlock](https://github.com/landlock-lsm/go-landlock)
+to deny new filesystem access, execution, TCP and UDP networking, and access
+to external pathname and abstract unix sockets. Existing file descriptors
+remain usable. `sign` therefore connects to `SSH_AUTH_SOCK` before restricting
+itself.
+
+Restriction is automatic and best effort. Unsupported kernels, disabled
+Landlock, other operating systems, and an unavailable or erroring ABI query
+continue without restriction.
+
+> [!IMPORTANT]
+> This reduces the impact of a bug - it is not a complete sandbox.
+
+
 ## Result fields
 
 `verify` and `check` reports various information and result fields:

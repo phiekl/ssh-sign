@@ -13,6 +13,7 @@ import (
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type SignCommand struct {
@@ -21,14 +22,16 @@ type SignCommand struct {
 	commandOpts flow.SignOpts
 
 	dataFile string
+	signKey  string
 }
 
 func (c *SignCommand) Command() (any, []error) {
 	log := commandLog(c.GlobalOpts)
 	c.commandOpts.Log = log
 
-	if err := flow.CheckSignKey(c.commandOpts.SignKey); err != nil {
-		return nil, []error{cli.MarkUsage(err)}
+	pk, err := sshsig.PublicKeyLineParse(c.signKey)
+	if err != nil {
+		return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err))}
 	}
 
 	if c.dataFile == "" {
@@ -46,6 +49,24 @@ func (c *SignCommand) Command() (any, []error) {
 		c.commandOpts.DataFile = f
 	}
 	debugInput(log, "data", c.dataFile)
+
+	// Connect to the agent before restricting pathname access. A failure to
+	// hand back the socket after signing does not invalidate the signature.
+	conn, agent, err := sshsig.AgentConnect(log)
+	if err != nil {
+		return nil, []error{fmt.Errorf("failed agent connection: %v", err)}
+	}
+	defer func() { _ = conn.Close() }()
+
+	if err := restrict(log); err != nil {
+		return nil, []error{err}
+	}
+
+	signer, err := sshsig.AgentSigner(log, conn, agent, pk)
+	if err != nil {
+		return nil, []error{fmt.Errorf("agent: %v", err)}
+	}
+	c.commandOpts.Signer = signer
 
 	return flow.Sign(&c.commandOpts)
 }
@@ -66,10 +87,10 @@ func (c *SignCommand) Args() {
 	c.ArgP.StringDenyEmpty(&c.commandOpts.Namespace, "namespace")
 
 	c.ArgP.StringVarP(
-		&c.commandOpts.SignKey,
+		&c.signKey,
 		"sign-key", "k", "",
 		"create signature using this pubkey reference (must exist in ssh-agent)",
 	)
 	c.ArgP.Required("sign-key")
-	c.ArgP.StringDenyEmpty(&c.commandOpts.SignKey, "sign-key")
+	c.ArgP.StringDenyEmpty(&c.signKey, "sign-key")
 }

@@ -9,18 +9,35 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"io"
-	"net"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 )
 
-// startAgent serves an in-process ssh-agent holding one key over a unix socket,
-// points SSH_AUTH_SOCK at it, and returns that key's authorized_keys line.
-func startAgent(t *testing.T) string {
+type typedNilSigner struct{}
+
+func (*typedNilSigner) PublicKey() ssh.PublicKey { return nil }
+func (*typedNilSigner) Sign(io.Reader, []byte) (*ssh.Signature, error) {
+	return nil, nil
+}
+
+type nilPublicKeySigner struct {
+	publicKey ssh.PublicKey
+}
+
+func (s nilPublicKeySigner) PublicKey() ssh.PublicKey { return s.publicKey }
+func (nilPublicKeySigner) Sign(io.Reader, []byte) (*ssh.Signature, error) {
+	return nil, nil
+}
+
+type typedNilPublicKey struct{}
+
+func (*typedNilPublicKey) Type() string                        { return "" }
+func (*typedNilPublicKey) Marshal() []byte                     { return nil }
+func (*typedNilPublicKey) Verify([]byte, *ssh.Signature) error { return nil }
+
+func testSigner(t *testing.T) ssh.Signer {
 	t.Helper()
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -31,42 +48,17 @@ func startAgent(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("creating signer: %v", err)
 	}
-
-	keyring := agent.NewKeyring()
-	if err := keyring.Add(agent.AddedKey{PrivateKey: priv}); err != nil {
-		t.Fatalf("adding key to the agent: %v", err)
-	}
-
-	// macOS caps unix socket paths, and t.TempDir() can be long, but this only
-	// ever runs on the short paths CI and Linux hand out.
-	sock := filepath.Join(t.TempDir(), "agent.sock")
-	listener, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Skipf("cannot listen on a unix socket: %v", err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func() { _ = agent.ServeAgent(keyring, conn) }()
-		}
-	}()
-
-	t.Setenv("SSH_AUTH_SOCK", sock)
-	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+	return signer
 }
 
 func TestSign(t *testing.T) {
-	keyLine := startAgent(t)
+	signer := testSigner(t)
+	keyLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
 
 	res, errs := Sign(&SignOpts{
 		DataFile:  strings.NewReader(testData),
-		SignKey:   keyLine,
 		Namespace: "git",
+		Signer:    signer,
 	})
 	if len(errs) != 0 {
 		t.Fatalf("Sign() errors = %v, want none", errs)
@@ -88,7 +80,7 @@ func TestSign(t *testing.T) {
 }
 
 func TestSignRejectsMissingData(t *testing.T) {
-	keyLine := startAgent(t)
+	signer := testSigner(t)
 
 	var typedNil *bytes.Reader
 	// The map has to be of the interface type. Holding the cases as
@@ -101,7 +93,7 @@ func TestSignRejectsMissingData(t *testing.T) {
 					t.Fatalf("panicked on a missing reader: %v", r)
 				}
 			}()
-			opts := &SignOpts{DataFile: missing, SignKey: keyLine, Namespace: "git"}
+			opts := &SignOpts{DataFile: missing, Namespace: "git", Signer: signer}
 			if _, errs := Sign(opts); len(errs) == 0 ||
 				!strings.Contains(errorText(errs), "data file is required") {
 				t.Errorf("Sign() errors = %v, want a missing-input error", errs)
@@ -110,16 +102,44 @@ func TestSignRejectsMissingData(t *testing.T) {
 	}
 }
 
-func TestSignRejectsAKeyTheAgentDoesNotHold(t *testing.T) {
-	startAgent(t)
-	other := sign(t, "git")
+func TestSignRejectsMissingSigner(t *testing.T) {
+	var typedNil *typedNilSigner
+	for name, signer := range map[string]ssh.Signer{"nil": nil, "typed nil": typedNil} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("panicked on a missing signer: %v", r)
+				}
+			}()
+			_, errs := Sign(&SignOpts{
+				DataFile:  strings.NewReader(testData),
+				Namespace: "git",
+				Signer:    signer,
+			})
+			if !strings.Contains(errorText(errs), "signer is required") {
+				t.Errorf("Sign() errors = %v, want a missing-signer error", errs)
+			}
+		})
+	}
+}
 
-	_, errs := Sign(&SignOpts{
-		DataFile:  strings.NewReader(testData),
-		SignKey:   other.keyLine,
-		Namespace: "git",
-	})
-	if !strings.Contains(errorText(errs), "no key matched") {
-		t.Errorf("Sign() errors = %v, want an unmatched-key error", errs)
+func TestSignRejectsSignerWithoutPublicKey(t *testing.T) {
+	var typedNil *typedNilPublicKey
+	for name, publicKey := range map[string]ssh.PublicKey{"nil": nil, "typed nil": typedNil} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("panicked on a signer without a public key: %v", r)
+				}
+			}()
+			_, errs := Sign(&SignOpts{
+				DataFile:  strings.NewReader(testData),
+				Namespace: "git",
+				Signer:    nilPublicKeySigner{publicKey: publicKey},
+			})
+			if !strings.Contains(errorText(errs), "signer public key is required") {
+				t.Errorf("Sign() errors = %v, want a missing-public-key error", errs)
+			}
+		})
 	}
 }

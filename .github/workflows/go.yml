@@ -36,6 +36,14 @@ jobs:
       - name: Test
         run: make test
 
+      # The landlocktsync build tag swaps go-landlock's thread enforcement and
+      # its minimum ABI, which internal/landlock mirrors.
+      - name: Vet (landlocktsync)
+        run: make vet TAGS=landlocktsync
+
+      - name: Test (landlocktsync)
+        run: make test TAGS=landlocktsync
+
   sbom:
     needs: build
     runs-on: ubuntu-latest
