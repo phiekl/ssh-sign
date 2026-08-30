@@ -178,7 +178,7 @@ func TestMatchEntryRestrictingNamespace(t *testing.T) {
 	}{
 		"restricted listed first":  {file: restrictedFirst, ns: "git", wantLine: 1, want: true},
 		"restricted listed second": {file: unrestrictedFirst, ns: "git", wantLine: 2, want: true},
-		"restriction excludes it": {file: unrestrictedFirst, ns: "email", wantLine: 1},
+		"restriction excludes it":  {file: unrestrictedFirst, ns: "email", wantLine: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			key := tt.file.Entries[0].PublicKey
