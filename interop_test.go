@@ -268,10 +268,19 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 	keyLine := generateOpenSSHKey(t, keygen, "ed25519", key)
 	runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", "file", dataPath)
 
+	// The signer controls the namespace; metacharacters are special only in the pattern.
+	const starNamespace = "*xblocked"
+	starData := filepath.Join(dir, "star-data")
+	if err := os.WriteFile(starData, []byte(data), 0o600); err != nil {
+		t.Fatalf("writing data: %v", err)
+	}
+	runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", starNamespace, starData)
+
 	tests := []struct {
 		name         string
 		line         string
 		principal    string
+		namespace    string
 		ourTime      string
 		openSSHTime  string
 		wantAccepted bool
@@ -306,6 +315,16 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			principal: "alice@example.com", wantAccepted: false,
 		},
 		{
+			name: "namespace negation over a literal star", namespace: starNamespace,
+			line:      `alice@example.com namespaces="*x*,!*blocked" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name: "namespace wildcard spans a literal star", namespace: starNamespace,
+			line:      `alice@example.com namespaces="*blocked" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
 			name:      "inside validity window",
 			line:      `alice@example.com valid-after="20260101Z",valid-before="20260201Z" ` + keyLine,
 			principal: "alice@example.com", ourTime: "2026-01-15T00:00:00Z",
@@ -328,9 +347,13 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			if err := os.WriteFile(allowed, []byte(tt.line+"\n"), 0o600); err != nil {
 				t.Fatalf("writing allowed signers: %v", err)
 			}
+			namespace, signed := "file", dataPath
+			if tt.namespace != "" {
+				namespace, signed = tt.namespace, starData
+			}
 			ourArgs := []string{
-				"verify", "-a", allowed, "-f", dataPath, "-s", dataPath + ".sig",
-				"-n", "file", "-p", tt.principal,
+				"verify", "-a", allowed, "-f", signed, "-s", signed + ".sig",
+				"-n", namespace, "-p", tt.principal,
 			}
 			if tt.ourTime != "" {
 				ourArgs = append(ourArgs, "-t", tt.ourTime)
@@ -339,7 +362,7 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 
 			openSSHArgs := []string{
 				"-Y", "verify", "-f", allowed, "-I", tt.principal,
-				"-n", "file", "-s", dataPath + ".sig",
+				"-n", namespace, "-s", signed + ".sig",
 			}
 			if tt.openSSHTime != "" {
 				openSSHArgs = append(openSSHArgs, "-O", "verify-time="+tt.openSSHTime)

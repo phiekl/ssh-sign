@@ -6,6 +6,7 @@ package allowedsigners
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -33,11 +34,47 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// naiveWildcardMatch is a recursive oracle for wildcardMatch. Memoising suffix
+// pairs avoids exponential runtime; only pattern bytes have wildcard meaning.
+func naiveWildcardMatch(pattern, value string) bool {
+	memo := make(map[[2]int]bool)
+
+	var match func(p, v int) bool
+	match = func(p, v int) bool {
+		if p == len(pattern) {
+			return v == len(value)
+		}
+		key := [2]int{p, v}
+		if got, ok := memo[key]; ok {
+			return got
+		}
+
+		var result bool
+		switch pattern[p] {
+		case '*':
+			// The star either stops here or swallows one more byte.
+			result = match(p+1, v) || (v < len(value) && match(p, v+1))
+		case '?':
+			result = v < len(value) && match(p+1, v+1)
+		default:
+			result = v < len(value) && value[v] == pattern[p] && match(p+1, v+1)
+		}
+
+		memo[key] = result
+		return result
+	}
+	return match(0, 0)
+}
+
 func FuzzWildcardMatch(f *testing.F) {
 	f.Add("*@example.com", "alice@example.com")
 	f.Add("*a*a*a*b", "aaaaaaaa")
 	f.Add("!", "value")
 	f.Add("", "")
+	f.Add("*blocked", "*xblocked")
+	// Guard against exponential runtime in the oracle.
+	f.Add(strings.Repeat("*", 64)+"b", strings.Repeat("a", 256))
+	f.Add(strings.Repeat("*?", 64)+"*b", strings.Repeat("a", 256))
 
 	f.Fuzz(func(t *testing.T, pattern, value string) {
 		if len(pattern) > 4096 || len(value) > 4096 {
@@ -46,6 +83,13 @@ func FuzzWildcardMatch(f *testing.F) {
 		first := wildcardMatch(pattern, value)
 		if second := wildcardMatch(pattern, value); second != first {
 			t.Fatalf("wildcardMatch is nondeterministic: first=%v second=%v", first, second)
+		}
+		// Cap the cross-check's O(len(pattern)*len(value)) work.
+		if len(pattern) > 256 || len(value) > 256 {
+			return
+		}
+		if want := naiveWildcardMatch(pattern, value); first != want {
+			t.Fatalf("wildcardMatch(%q, %q) = %v, want %v", pattern, value, first, want)
 		}
 	})
 }

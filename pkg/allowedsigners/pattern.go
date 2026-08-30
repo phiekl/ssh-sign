@@ -44,13 +44,9 @@ func patternsMatch(patterns []string, value string) bool {
 	return matched
 }
 
-// wildcardMatch implements the '*' and '?' matching used by OpenSSH. Unlike
-// filesystem globs, '*' also matches path separators.
-//
-// Matching is greedy with a single backtrack point, rather than recursing per
-// '*'. A pattern such as "*a*a*a*a*b" would otherwise take exponential time on
-// a non-matching value, and the value here is the namespace named by the
-// signature under verification.
+// wildcardMatch implements OpenSSH's '*' and '?' matching, including slashes.
+// A single backtrack point avoids exponential recursion. Handle '*' before
+// literal equality so "*blocked" matches "*xblocked" and exclusions hold.
 func wildcardMatch(pattern, value string) bool {
 	var p, v int
 	// star is the pattern index of the most recent '*', and mark how much of
@@ -59,13 +55,13 @@ func wildcardMatch(pattern, value string) bool {
 
 	for v < len(value) {
 		switch {
-		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == value[v]):
-			p++
-			v++
 		case p < len(pattern) && pattern[p] == '*':
 			star = p
 			p++
 			mark = v
+		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == value[v]):
+			p++
+			v++
 		case star >= 0:
 			// Let the last '*' swallow one more byte and retry from there.
 			p = star + 1

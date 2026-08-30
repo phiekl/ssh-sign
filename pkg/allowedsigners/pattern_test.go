@@ -25,6 +25,11 @@ func TestPatternListMatch(t *testing.T) {
 		{name: "negation wins", list: "*@example.com,!root@example.com", value: "root@example.com", want: false},
 		{name: "negation is not positive", list: "!root@example.com", value: "alice@example.com", want: false},
 		{name: "no match", list: "alice@example.com", value: "bob@example.com", want: false},
+		{name: "negation applies to a literal star", list: "*x*,!*blocked", value: "*xblocked", want: false},
+		{name: "negation applies to a leading star", list: "?*,!*blocked", value: "*xblocked", want: false},
+		{name: "bare wildcard spans a literal star", list: "*", value: "*weird", want: true},
+		// Also cover positive matching when the value contains '*'.
+		{name: "negated literal star stays denied", list: "*,!*blocked", value: "*xblocked", want: false},
 	}
 
 	for _, tt := range tests {
@@ -85,6 +90,33 @@ func TestParseAndMatchNamespacePatternList(t *testing.T) {
 	}
 }
 
+// A literal '*' in the namespace must not bypass a wildcard exclusion.
+func TestParseAndMatchNamespaceNegationWithLiteralStar(t *testing.T) {
+	const line = `alice@example.com namespaces="*x*,!*blocked" ` + testKey + "\n"
+
+	file, err := Parse(strings.NewReader(line))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	publicKey := file.Entries[0].PublicKey
+
+	entry, err := file.MatchEntry(publicKey, "alice@example.com", "*xblocked", time.Now())
+	if err == nil {
+		t.Fatal("MatchEntry() unexpectedly accepted a namespace escaping a negation")
+	}
+	if entry != nil {
+		t.Fatal("MatchEntry() returned an entry for an excluded namespace")
+	}
+
+	entry, err = file.MatchEntry(publicKey, "alice@example.com", "*xweird", time.Now())
+	if err != nil {
+		t.Fatalf("MatchEntry() error = %v", err)
+	}
+	if entry == nil {
+		t.Fatal("MatchEntry() did not match a namespace holding a literal '*'")
+	}
+}
+
 func TestWildcardMatch(t *testing.T) {
 	tests := []struct {
 		pattern string
@@ -107,6 +139,19 @@ func TestWildcardMatch(t *testing.T) {
 		{pattern: "*@example.com", value: "@example.com", want: true},
 		{pattern: "*.*", value: "a.b", want: true},
 		{pattern: "a?c*", value: "abcdef", want: true},
+		// Only pattern bytes have wildcard meaning.
+		{pattern: "*", value: "*", want: true},
+		{pattern: "*", value: "*xb", want: true},
+		{pattern: "*b", value: "*ab", want: true},
+		{pattern: "a*b", value: "a*xb", want: true},
+		{pattern: "*x", value: "**x", want: true},
+		{pattern: "*blocked", value: "*xblocked", want: true},
+		{pattern: "?", value: "*", want: true},
+		{pattern: "a*b", value: "a*b", want: true},
+		{pattern: "a*b", value: "a**xb", want: true},
+		{pattern: "?*", value: "*", want: true},
+		{pattern: "*?", value: "*", want: true},
+		{pattern: "a*", value: "*a", want: false},
 	}
 
 	for _, tt := range tests {
