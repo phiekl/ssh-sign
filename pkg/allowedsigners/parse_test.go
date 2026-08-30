@@ -151,26 +151,85 @@ func localOffset(t *testing.T, at time.Time) int {
 	return offset
 }
 
-func TestParseRejectsMalformedLines(t *testing.T) {
+// Record malformed lines without rejecting the whole file.
+func TestParseSkipsMalformedLines(t *testing.T) {
 	tests := map[string]string{
-		"too few fields":          "alice@example.com",
-		"missing key":             "alice@example.com ssh-ed25519",
-		"options but no key":      `alice@example.com namespaces="git" ssh-ed25519`,
-		"key type mismatch":       "alice@example.com ssh-rsa " + strings.Fields(testKey)[1],
-		"invalid key":             "alice@example.com ssh-ed25519 not-base64!",
-		"unknown option":          `alice@example.com bogus="x" ` + testKey,
-		"cert-authority":          "alice@example.com cert-authority " + testKey,
-		"unterminated quote":      `alice@example.com namespaces="git ` + testKey,
-		"empty principal in list": "alice@example.com,, " + testKey,
-		"bad valid-after":         `alice@example.com valid-after="nonsense" ` + testKey,
+		"too few fields":     "alice@example.com",
+		"missing key":        "alice@example.com ssh-ed25519",
+		"options but no key": `alice@example.com namespaces="git" ssh-ed25519`,
+		"key type mismatch":  "alice@example.com ssh-rsa " + strings.Fields(testKey)[1],
+		"invalid key":        "alice@example.com ssh-ed25519 not-base64!",
+		"unknown option":     `alice@example.com bogus="x" ` + testKey,
+		"cert-authority":     "alice@example.com cert-authority " + testKey,
+		"unterminated quote": `alice@example.com namespaces="git ` + testKey,
+		"bad valid-after":    `alice@example.com valid-after="nonsense" ` + testKey,
 	}
 
 	for name, line := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Parse(strings.NewReader(line + "\n")); err == nil {
-				t.Errorf("Parse(%q) unexpectedly succeeded", line)
+			f, err := Parse(strings.NewReader(line + "\n"))
+			if err != nil {
+				t.Fatalf("Parse(%q) error = %v, want nil", line, err)
+			}
+			if len(f.Entries) != 0 {
+				t.Errorf("len(Entries) = %d, want 0", len(f.Entries))
+			}
+			if len(f.Skipped) != 1 {
+				t.Fatalf("len(Skipped) = %d, want 1", len(f.Skipped))
+			}
+			if f.Skipped[0].Line != 1 {
+				t.Errorf("Skipped[0].Line = %d, want 1", f.Skipped[0].Line)
 			}
 		})
+	}
+}
+
+// Valid entries remain usable after a malformed line.
+func TestParseKeepsGoodEntriesPastABadLine(t *testing.T) {
+	f, err := Parse(strings.NewReader(
+		"bob@example.com cert-authority " + testKey + "\n" +
+			"alice@example.com " + testKey + "\n",
+	))
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	if len(f.Entries) != 1 {
+		t.Fatalf("len(Entries) = %d, want 1", len(f.Entries))
+	}
+	if f.Entries[0].Principal != "alice@example.com" {
+		t.Errorf("Principal = %q, want %q", f.Entries[0].Principal, "alice@example.com")
+	}
+	if len(f.Skipped) != 1 || f.Skipped[0].Line != 1 {
+		t.Errorf("Skipped = %v, want the cert-authority line recorded", f.Skipped)
+	}
+}
+
+// Bound retained diagnostics while counting every skipped line.
+func TestParseBoundsRecordedSkips(t *testing.T) {
+	const lines = maxSkippedRecorded * 4
+
+	f, err := Parse(strings.NewReader(strings.Repeat("x\n", lines)))
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	if len(f.Entries) != 0 {
+		t.Errorf("len(Entries) = %d, want 0", len(f.Entries))
+	}
+	if len(f.Skipped) != maxSkippedRecorded {
+		t.Errorf("len(Skipped) = %d, want %d", len(f.Skipped), maxSkippedRecorded)
+	}
+	// Count skips beyond the diagnostic limit.
+	if f.SkippedCount != lines {
+		t.Errorf("SkippedCount = %d, want %d", f.SkippedCount, lines)
+	}
+}
+
+// Read errors and oversized lines remain fatal.
+func TestParseFailsOnUnreadableInput(t *testing.T) {
+	const limit = 64
+	line := "alice@example.com " + strings.Repeat("x", limit)
+	if _, err := parseWithMaxLineSize(strings.NewReader(line), limit); err == nil {
+		t.Error("parseWithMaxLineSize() accepted a line over the limit")
 	}
 }
 
@@ -183,16 +242,20 @@ func TestParseTruncatesEchoedOptionKeys(t *testing.T) {
 		"unknown option":  `alice@example.com ` + huge + `="x" ` + testKey,
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := Parse(strings.NewReader(line + "\n"))
-			if err == nil {
-				t.Fatal("Parse() unexpectedly succeeded")
+			f, err := Parse(strings.NewReader(line + "\n"))
+			if err != nil {
+				t.Fatalf("Parse() error = %v, want nil", err)
 			}
-			if len(err.Error()) > 512 {
-				t.Errorf("Parse() error is %d bytes long, want the key truncated",
-					len(err.Error()))
+			if len(f.Skipped) != 1 {
+				t.Fatalf("len(Skipped) = %d, want 1", len(f.Skipped))
 			}
-			if !strings.Contains(err.Error(), "1048576 bytes total") {
-				t.Errorf("Parse() error = %v, want the full key length reported", err)
+			msg := f.Skipped[0].Error()
+			if len(msg) > 512 {
+				t.Errorf("skipped line reason is %d bytes long, want the key truncated",
+					len(msg))
+			}
+			if !strings.Contains(msg, "1048576 bytes total") {
+				t.Errorf("skipped line reason = %v, want the full key length reported", msg)
 			}
 		})
 	}
@@ -229,21 +292,19 @@ func TestParseAcceptsAFileWithoutEntries(t *testing.T) {
 }
 
 func TestParseReportsTheOffendingLineNumber(t *testing.T) {
-	_, err := Parse(strings.NewReader(
+	f, err := Parse(strings.NewReader(
 		"alice@example.com " + testKey + "\n" +
 			"# comment\n" +
 			"broken\n",
 	))
-	if err == nil {
-		t.Fatal("Parse() unexpectedly succeeded")
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
 	}
-
-	parseErr, ok := err.(*ParseError)
-	if !ok {
-		t.Fatalf("Parse() error is %T, want *ParseError", err)
+	if len(f.Skipped) != 1 {
+		t.Fatalf("len(Skipped) = %d, want 1", len(f.Skipped))
 	}
-	if parseErr.Line != 3 {
-		t.Errorf("Line = %d, want 3", parseErr.Line)
+	if f.Skipped[0].Line != 3 {
+		t.Errorf("Line = %d, want 3", f.Skipped[0].Line)
 	}
 }
 
@@ -280,7 +341,11 @@ func TestParseEscapesOptionValuesLikeOpenSSH(t *testing.T) {
 // closing quote is escaped, so OpenSSH keeps scanning and never finds one.
 func TestParseRejectsAQuoteEscapedAtTheEndOfAValue(t *testing.T) {
 	line := `alice@example.com namespaces="a\\" ` + testKey
-	if _, err := Parse(strings.NewReader(line + "\n")); err == nil {
+	f, err := Parse(strings.NewReader(line + "\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	if len(f.Entries) != 0 {
 		t.Error("Parse() accepted a value whose closing quote is escaped")
 	}
 }

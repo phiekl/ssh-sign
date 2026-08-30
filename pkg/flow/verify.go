@@ -80,8 +80,13 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		return nil, []error{fmt.Errorf("failed parsing allowed signers file: %v", err)}
 	}
 	cli.Debug(opts.Log, cli.LevelDebug2, "verify: parsed allowed signers",
-		"entries", len(parsed.Entries),
+		"entries", len(parsed.Entries), "skipped", parsed.SkippedCount,
 	)
+	for i := range parsed.Skipped {
+		cli.Debug(opts.Log, cli.LevelDebug1, "verify: skipped allowed signers line",
+			"line", parsed.Skipped[i].Line, "reason", parsed.Skipped[i].Msg,
+		)
+	}
 	for i := range parsed.Entries {
 		cli.Debug(opts.Log, cli.LevelDebug3, "verify: allowed signers entry",
 			entryAttr("entry", &parsed.Entries[i]),

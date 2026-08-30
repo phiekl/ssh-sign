@@ -17,6 +17,9 @@ import (
 // and their comments can be much larger than ordinary public-key lines.
 const maxLineSize = 0x8000000
 
+// maxSkippedRecorded caps retained diagnostics for malformed input.
+const maxSkippedRecorded = 64
+
 type ParseError struct {
 	Line int
 	Msg  string
@@ -50,9 +53,13 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 		if strings.HasPrefix(trim, "#") {
 			continue
 		}
-		entry, err := parseLine(n, trim)
-		if err != nil {
-			return nil, err
+		entry, perr := parseLine(n, trim)
+		if perr != nil {
+			f.SkippedCount++
+			if len(f.Skipped) < maxSkippedRecorded {
+				f.Skipped = append(f.Skipped, *perr)
+			}
+			continue
 		}
 		f.Entries = append(f.Entries, *entry)
 	}
@@ -63,7 +70,7 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 }
 
 // parseLine parses a single line fed from an allowed signers file.
-func parseLine(n int, line string) (*Entry, error) {
+func parseLine(n int, line string) (*Entry, *ParseError) {
 	head, _, err := splitFields(line, 2)
 	if err != nil {
 		return nil, &ParseError{Line: n, Msg: err.Error()}

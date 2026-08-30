@@ -13,6 +13,12 @@ import (
 // File represents a parsed allowed signers file.
 type File struct {
 	Entries []Entry
+
+	// Skipped records at most maxSkippedRecorded parse errors.
+	Skipped []ParseError
+
+	// SkippedCount includes errors beyond the recorded limit.
+	SkippedCount int
 }
 
 // Entry represents a single non-comment line in an allowed signers file.

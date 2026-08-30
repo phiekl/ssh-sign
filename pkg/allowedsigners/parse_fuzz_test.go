@@ -29,7 +29,19 @@ func FuzzParse(f *testing.F) {
 			if entry.PublicKey == nil {
 				t.Fatalf("entry %d has a nil public key", i)
 			}
+			if entry.Principal == "" {
+				t.Fatalf("entry %d has an empty principal", i)
+			}
 			_ = entry.PublicKey.Marshal()
+		}
+		// Count all skipped lines, but bound retained diagnostics.
+		if len(parsed.Skipped) > maxSkippedRecorded {
+			t.Fatalf("recorded %d skipped lines, want at most %d",
+				len(parsed.Skipped), maxSkippedRecorded)
+		}
+		if parsed.SkippedCount < len(parsed.Skipped) {
+			t.Fatalf("SkippedCount is %d, below the %d recorded",
+				parsed.SkippedCount, len(parsed.Skipped))
 		}
 	})
 }
