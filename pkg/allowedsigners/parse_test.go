@@ -97,7 +97,6 @@ func TestParseOptions(t *testing.T) {
 		want    []string
 	}{
 		{name: "quoted list", options: `namespaces="git,email"`, want: []string{"git", "email"}},
-		{name: "unquoted single", options: `namespaces=git`, want: []string{"git"}},
 		{name: "uppercase key", options: `NAMESPACES="git"`, want: []string{"git"}},
 		{name: "space inside quotes", options: `namespaces="a b"`, want: []string{"a b"}},
 		{
@@ -321,8 +320,6 @@ func TestParseEscapesOptionValuesLikeOpenSSH(t *testing.T) {
 		`namespaces="a\"b"`:   `a"b`,
 		`namespaces="a\\\"b"`: `a\\"b`,
 		`namespaces="plain"`:  "plain",
-		`namespaces=unquoted`: "unquoted",
-		`namespaces=a\b`:      `a\b`,
 	}
 
 	for options, want := range tests {
@@ -332,6 +329,35 @@ func TestParseEscapesOptionValuesLikeOpenSSH(t *testing.T) {
 			got := f.Entries[0].Options.Namespaces
 			if len(got) != 1 || got[0] != want {
 				t.Errorf("Namespaces = %q, want [%q]", got, want)
+			}
+		})
+	}
+}
+
+// Unquoted option values must not activate entries ssh-keygen rejects.
+func TestParseSkipsUnquotedOptionValues(t *testing.T) {
+	for _, options := range []string{
+		`namespaces=git`,
+		`namespaces=*`,
+		`valid-after=20200101Z`,
+		`namespaces="git",valid-before=20200101Z`,
+		// An even number of quotes survives splitting, but still has no
+		// leading quote of its own.
+		`namespaces=a"b"c`,
+	} {
+		t.Run(options, func(t *testing.T) {
+			f, err := Parse(strings.NewReader("alice@example.com " + options + " " + testKey + "\n"))
+			if err != nil {
+				t.Fatalf("Parse() error = %v, want nil", err)
+			}
+			if len(f.Entries) != 0 {
+				t.Errorf("len(Entries) = %d, want the line skipped", len(f.Entries))
+			}
+			if len(f.Skipped) != 1 {
+				t.Fatalf("len(Skipped) = %d, want 1", len(f.Skipped))
+			}
+			if !strings.Contains(f.Skipped[0].Msg, "missing start quote") {
+				t.Errorf("Skipped[0].Msg = %q, want a missing start quote", f.Skipped[0].Msg)
 			}
 		})
 	}

@@ -324,7 +324,7 @@ func unquoteOptionValue(s string) (string, error) {
 		return "", nil
 	}
 	if s[0] != '"' {
-		return s, nil
+		return "", fmt.Errorf("missing start quote")
 	}
 	if len(s) < 2 || s[len(s)-1] != '"' {
 		return "", fmt.Errorf("unterminated quoted string")
