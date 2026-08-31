@@ -5,19 +5,8 @@
 package allowedsigners
 
 import (
-	"fmt"
 	"strings"
 )
-
-// validatePatternList checks the structure of an OpenSSH pattern-list.
-func validatePatternList(list string) error {
-	for _, pattern := range strings.Split(list, ",") {
-		if pattern == "" || pattern == "!" {
-			return fmt.Errorf("empty pattern")
-		}
-	}
-	return nil
-}
 
 // patternListMatch reports whether value matches an OpenSSH pattern-list.
 func patternListMatch(list, value string) bool {

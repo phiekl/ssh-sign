@@ -99,9 +99,6 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 	if e.Principal == "" {
 		return nil, &ParseError{Line: n, Msg: "empty principal"}
 	}
-	if err := validatePatternList(e.Principal); err != nil {
-		return nil, &ParseError{Line: n, Msg: fmt.Sprintf("invalid principal pattern-list: %v", err)}
-	}
 
 	keyTypeIdx := 1
 	e.Options = Options{}
@@ -179,9 +176,6 @@ func parseOptions(s string) (Options, error) {
 		case "namespaces":
 			if o.Namespaces != nil {
 				return o, fmt.Errorf("multiple %q clauses", key)
-			}
-			if err := validatePatternList(val); err != nil {
-				return o, fmt.Errorf("namespaces: invalid pattern-list: %v", err)
 			}
 			o.Namespaces = append(o.Namespaces, strings.Split(val, ",")...)
 		case "valid-after":

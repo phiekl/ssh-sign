@@ -41,11 +41,46 @@ func TestPatternListMatch(t *testing.T) {
 	}
 }
 
-func TestValidatePatternList(t *testing.T) {
-	for _, list := range []string{"", "alice,", ",alice", "alice,,bob", "!"} {
-		if err := validatePatternList(list); err == nil {
-			t.Errorf("validatePatternList(%q) unexpectedly succeeded", list)
+// Empty pattern elements cannot match nonempty principals or namespaces.
+func TestEmptyPatternsAreInert(t *testing.T) {
+	for _, list := range []string{"alice,", ",alice", "alice,,bob"} {
+		if !patternListMatch(list, "alice") {
+			t.Errorf("patternListMatch(%q, %q) = false, want true", list, "alice")
 		}
+		if patternListMatch(list, "carol") {
+			t.Errorf("patternListMatch(%q, %q) = true, want false", list, "carol")
+		}
+	}
+	// A bare "!" negates the empty pattern, so it matches nothing either way.
+	if patternListMatch("!", "alice") {
+		t.Error(`patternListMatch("!", "alice") = true, want false`)
+	}
+}
+
+// Accept empty elements in both principal and namespace lists.
+func TestParseAcceptsEmptyPatterns(t *testing.T) {
+	for name, line := range map[string]string{
+		"principals": "alice@example.com,,bob@example.com " + testKey,
+		"namespaces": `alice@example.com namespaces="git,,email" ` + testKey,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := Parse(strings.NewReader(line + "\n"))
+			if err != nil {
+				t.Fatalf("Parse() error = %v, want nil", err)
+			}
+			if len(f.Entries) != 1 {
+				t.Fatalf("len(Entries) = %d, want 1", len(f.Entries))
+			}
+			entry, err := f.MatchEntry(
+				f.Entries[0].PublicKey, "alice@example.com", "git", time.Now(),
+			)
+			if err != nil {
+				t.Fatalf("MatchEntry() error = %v", err)
+			}
+			if entry == nil {
+				t.Error("MatchEntry() did not match past an empty pattern")
+			}
+		})
 	}
 }
 
