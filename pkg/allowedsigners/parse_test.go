@@ -82,6 +82,75 @@ func TestParseEntryFields(t *testing.T) {
 	}
 }
 
+// Quoted principals must match their unquoted identities.
+func TestParseUnquotesPrincipals(t *testing.T) {
+	tests := map[string]struct {
+		field string
+		want  string
+	}{
+		"quoted":        {field: `"alice@example.com"`, want: "alice@example.com"},
+		"quoted list":   {field: `"alice@example.com,bob@example.com"`, want: "alice@example.com,bob@example.com"},
+		"bare":          {field: "alice@example.com", want: "alice@example.com"},
+		"escaped quote": {field: `"alice\"bob"`, want: `alice"bob`},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := parseLines(t, tt.field+" "+testKey)
+			if got := f.Entries[0].Principal; got != tt.want {
+				t.Errorf("Principal = %q, want %q", got, tt.want)
+			}
+			entry, err := f.MatchEntry(
+				f.Entries[0].PublicKey, "alice@example.com", "git", time.Now(),
+			)
+			if err != nil {
+				t.Fatalf("MatchEntry() error = %v", err)
+			}
+			if name != "escaped quote" && entry == nil {
+				t.Error("MatchEntry() did not match the quoted principal")
+			}
+		})
+	}
+}
+
+// Reject spliced quoted fields that could authorise unintended principals.
+func TestParseSkipsASplicedQuotedField(t *testing.T) {
+	for name, line := range map[string]string{
+		"principals": `"alice,bob","carol" ` + testKey,
+		"namespaces": `alice@example.com namespaces="git","email" ` + testKey,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := Parse(strings.NewReader(line + "\n"))
+			if err != nil {
+				t.Fatalf("Parse() error = %v, want nil", err)
+			}
+			if len(f.Entries) != 0 {
+				t.Fatalf("Entries = %+v, want the line skipped", f.Entries)
+			}
+			if len(f.Skipped) != 1 {
+				t.Fatalf("len(Skipped) = %d, want 1", len(f.Skipped))
+			}
+		})
+	}
+}
+
+// A spliced principal field must not grant access.
+func TestMatchEntryIgnoresASplicedPrincipal(t *testing.T) {
+	f, err := Parse(strings.NewReader(`"alice,bob","carol" ` + testKey + "\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	key := parseLines(t, "someone@example.com "+testKey).Entries[0].PublicKey
+
+	entry, err := f.MatchEntry(key, "alice", "git", time.Now())
+	if err != nil {
+		t.Fatalf("MatchEntry() error = %v", err)
+	}
+	if entry != nil {
+		t.Errorf("MatchEntry() = %+v, want no entry for a spliced principal", entry)
+	}
+}
+
 func TestParseTreatsTrailingCommentAsOpaque(t *testing.T) {
 	f := parseLines(t, "alice@example.com "+testKey+` owner "unfinished comment`)
 

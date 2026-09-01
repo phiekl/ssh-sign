@@ -95,7 +95,10 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 
 	e := &Entry{Line: n, Raw: line}
 
-	e.Principal = strings.TrimSpace(fields[0])
+	e.Principal, err = unquotePrincipals(strings.TrimSpace(fields[0]))
+	if err != nil {
+		return nil, &ParseError{Line: n, Msg: fmt.Sprintf("principals: %v", err)}
+	}
 	if e.Principal == "" {
 		return nil, &ParseError{Line: n, Msg: "empty principal"}
 	}
@@ -320,6 +323,22 @@ func unquoteOptionValue(s string) (string, error) {
 	if s[0] != '"' {
 		return "", fmt.Errorf("missing start quote")
 	}
+	return unquote(s)
+}
+
+// unquotePrincipals accepts bare or quoted principals. Quotes within a bare
+// field remain literal; OpenSSH removes them.
+func unquotePrincipals(s string) (string, error) {
+	if s == "" || s[0] != '"' {
+		return s, nil
+	}
+	return unquote(s)
+}
+
+// unquote removes surrounding quotes and unescapes quotes within them.
+// Reject unescaped interior quotes: splicing `"alice,bob","carol"` would
+// authorise alice from a line ssh-keygen rejects.
+func unquote(s string) (string, error) {
 	if len(s) < 2 || s[len(s)-1] != '"' {
 		return "", fmt.Errorf("unterminated quoted string")
 	}
@@ -329,6 +348,8 @@ func unquoteOptionValue(s string) (string, error) {
 	for i := 0; i < len(inner); i++ {
 		if isEscapedQuote(inner, i) {
 			i++
+		} else if inner[i] == '"' {
+			return "", fmt.Errorf("unescaped quote inside a quoted string")
 		}
 		b.WriteByte(inner[i])
 	}
