@@ -15,10 +15,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// maxSignatureArmorSize bounds malformed or hostile input while leaving ample
-// room for certificate-backed signatures. It matches OpenSSH's hard sshbuf
-// ceiling, which also bounds the armored signature buffer read by ssh-keygen.
-const maxSignatureArmorSize = 0x8000000
+// maxSignatureArmorSize limits memory use while allowing certificate signatures.
+const maxSignatureArmorSize = 1 << 20
 
 // SignatureCreate creates a signature of the input data.
 func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*Signature, error) {

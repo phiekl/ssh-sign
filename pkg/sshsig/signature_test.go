@@ -147,7 +147,9 @@ func craftedSignature(t *testing.T, wire signatureWire) string {
 }
 
 func TestSignatureReadBoundsHostileFields(t *testing.T) {
-	huge := strings.Repeat("F", 1<<20)
+	// Large enough to need truncating in an error, small enough that the
+	// armored signature still fits under maxSignatureArmorSize.
+	huge := strings.Repeat("F", 1<<16)
 
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

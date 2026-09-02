@@ -13,9 +13,8 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
-// maxLineSize matches OpenSSH's SSHBUF_SIZE_MAX. Certificate-backed entries
-// and their comments can be much larger than ordinary public-key lines.
-const maxLineSize = 0x8000000
+// maxLineSize limits memory use while allowing large certificates and comments.
+const maxLineSize = 4 << 20
 
 // maxSkippedRecorded caps retained diagnostics for malformed input.
 const maxSkippedRecorded = 64
