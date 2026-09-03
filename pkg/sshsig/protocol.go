@@ -183,6 +183,10 @@ func Verify(in io.Reader, sig *Signature) error {
 			"unsupported signature version %d: expected %d", sig.Version, sigVersion,
 		)
 	}
+	// The reserved field is unsigned and must be empty.
+	if sig.Reserved != "" {
+		return fmt.Errorf("signature reserved field is not empty")
+	}
 	// A signature ssh-keygen refuses must never verify here either, however it
 	// was obtained.
 	if err := validateSignatureAlgorithm(sig); err != nil {
@@ -229,6 +233,13 @@ func ParseSignature(blob []byte) (*Signature, error) {
 		return nil, fmt.Errorf("signature contains %d bytes of trailing data", len(sshSig.Rest))
 	}
 
+	// Reject unsigned reserved data to prevent malleability.
+	if wire.Reserved != "" {
+		return nil, fmt.Errorf("signature reserved field is not empty")
+	}
+	if wire.Namespace == "" {
+		return nil, fmt.Errorf("signature namespace is empty")
+	}
 	if err := validateNamespace(wire.Namespace); err != nil {
 		return nil, err
 	}

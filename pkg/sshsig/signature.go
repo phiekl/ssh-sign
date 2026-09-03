@@ -80,12 +80,6 @@ func signatureRead(in io.Reader, max int64) (*Signature, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unarmoring data failed: %v", boundedError(err))
 	}
-	if sig.Reserved != "" {
-		return nil, fmt.Errorf("signature reserved field is not empty")
-	}
-	if sig.Namespace == "" {
-		return nil, fmt.Errorf("signature namespace is empty")
-	}
 	if err := validateSignatureAlgorithm(sig); err != nil {
 		return nil, err
 	}

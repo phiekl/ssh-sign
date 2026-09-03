@@ -385,7 +385,8 @@ func TestParseSignatureAcceptsEveryRSAFormat(t *testing.T) {
 	}
 }
 
-func TestMarshalPreservesReserved(t *testing.T) {
+// Both parsing and verification must reject unsigned reserved data.
+func TestReservedFieldIsRejected(t *testing.T) {
 	sig, err := Sign(strings.NewReader("data\n"), newSigner(t), HashSHA512, "file")
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
@@ -394,18 +395,25 @@ func TestMarshalPreservesReserved(t *testing.T) {
 		t.Errorf("Reserved = %q, want empty for a new signature", sig.Reserved)
 	}
 
+	// Marshal preserves fields; parsing and verification enforce policy.
 	sig.Reserved = "future use"
-	parsed, err := ParseSignature(Marshal(sig))
+	if _, err := ParseSignature(Marshal(sig)); err == nil {
+		t.Error("ParseSignature() accepted a non-empty reserved field")
+	}
+	if err := Verify(strings.NewReader("data\n"), sig); err == nil {
+		t.Error("Verify() accepted a non-empty reserved field")
+	}
+}
+
+// ParseSignature must reject empty namespaces without relying on SignatureRead.
+func TestParseSignatureRejectsAnEmptyNamespace(t *testing.T) {
+	sig, err := Sign(strings.NewReader("data\n"), newSigner(t), HashSHA512, "file")
 	if err != nil {
-		t.Fatalf("ParseSignature() error = %v", err)
+		t.Fatalf("Sign() error = %v", err)
 	}
-	if parsed.Reserved != "future use" {
-		t.Errorf("Reserved = %q, want it round-tripped", parsed.Reserved)
-	}
-	// The reserved field is not part of the signed data, so a signature stays
-	// verifiable regardless of it.
-	if err := Verify(strings.NewReader("data\n"), parsed); err != nil {
-		t.Errorf("Verify() error = %v, want nil", err)
+	sig.Namespace = ""
+	if _, err := ParseSignature(Marshal(sig)); err == nil {
+		t.Error("ParseSignature() accepted an empty namespace")
 	}
 }
 
