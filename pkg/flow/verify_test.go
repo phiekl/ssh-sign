@@ -110,6 +110,30 @@ func TestVerifyRejectsAnUnconstrainedNamespace(t *testing.T) {
 	}
 }
 
+// An expired entry cannot validate a namespace, even if its pattern matches.
+func TestVerifyReportsARejectedEntryAsInvalid(t *testing.T) {
+	s := sign(t, "git")
+	allowed := `alice@example.com namespaces="git",valid-before="20200101Z" ` + s.keyLine + "\n"
+
+	opts := s.verifyOpts(allowed, "")
+	opts.Principal = "alice@example.com"
+	res, errs := Verify(opts)
+
+	if !strings.Contains(errorText(errs), "expired") {
+		t.Fatalf("Verify() errors = %v, want the entry rejected as expired", errs)
+	}
+	if res.Authentication != "invalid" {
+		t.Errorf("Authentication = %q, want %q", res.Authentication, "invalid")
+	}
+	if res.Designation != "invalid" {
+		t.Errorf("Designation = %q, want %q", res.Designation, "invalid")
+	}
+	// The identity asked about is reported even though it was not authorised.
+	if res.Principal != "alice@example.com" {
+		t.Errorf("Principal = %q, want %q", res.Principal, "alice@example.com")
+	}
+}
+
 func TestVerifyReportsAllowedSignersNamespaceAsValid(t *testing.T) {
 	s := sign(t, "git")
 	allowed := `alice@example.com namespaces="git" ` + s.keyLine + "\n"

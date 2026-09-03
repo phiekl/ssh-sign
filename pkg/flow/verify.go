@@ -99,8 +99,8 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	}
 	debugSignature(opts.Log, "verify", sig)
 
-	// Run every check so failures still include a partial result.
-	res := VerifyResult{Namespace: sig.Namespace}
+	// Run all checks and retain the requested principal on failure.
+	res := VerifyResult{Namespace: sig.Namespace, Principal: opts.Principal}
 
 	// Without an explicit namespace, allowed signers supplies the namespace policy.
 	if opts.Namespace == "" {
@@ -144,17 +144,14 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			"namespace_restricted", restricted,
 		)
 	}
-	// Reject a namespace that neither the invocation nor allowed signers checked.
+	// Only an accepted entry can validate an inferred namespace.
 	if opts.Namespace == "" && !opts.NoNamespace {
-		checked, matched := allowedsigners.NamespaceConstraintResult(err)
 		switch {
+		case ent == nil:
+			res.Designation = "invalid"
 		case restricted:
 			res.Designation = "valid"
-		case checked && matched:
-			res.Designation = "valid"
-		case checked:
-			res.Designation = "invalid"
-		case ent != nil:
+		default:
 			res.Designation = "invalid"
 			errs = append(errs, fmt.Errorf(
 				"signature namespace %q was left unverified: no namespace was requested "+
@@ -162,8 +159,6 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 					"(use -n, -N or namespaces=)",
 				sig.Namespace,
 			))
-		default:
-			res.Designation = "invalid"
 		}
 	}
 	// An explicit namespace must also satisfy allowed signers.
@@ -198,10 +193,8 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		// specific identity available.
 		res.Principal = ent.Principal
 	default:
+		// Report the requested identity, not the entry's pattern-list.
 		res.Authentication = "valid"
-		// ent.Principal is the entry's pattern-list, which may be something
-		// like "*@example.com". Report the identity that was authenticated.
-		res.Principal = opts.Principal
 	}
 
 	if err := sshsig.SignatureVerify(opts.VerifyFile, sig); err == nil {
