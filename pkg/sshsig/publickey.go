@@ -29,15 +29,27 @@ func PublicKeyLineParse(pkLine string) (ssh.PublicKey, error) {
 	}
 
 	pkEnc := tokens[0]
+	keyType := ""
 	// All key types contains a dash (e.g. ssh-ed25519), while base64 won't.
 	if strings.Contains(pkEnc, "-") {
 		if len(tokens) < 2 {
 			return nil, fmt.Errorf("no pubkey token found in %s", QuoteToken(pkLine))
 		}
+		keyType = pkEnc
 		pkEnc = tokens[1]
 	}
 
-	return PublicKeyParse(pkEnc)
+	pk, err := PublicKeyParse(pkEnc)
+	if err != nil {
+		return nil, err
+	}
+	// Require the stated key type to match, as in allowed-signers parsing.
+	if keyType != "" && pk.Type() != keyType {
+		return nil, fmt.Errorf(
+			"key type mismatch: defined %s but parsed %q", QuoteToken(keyType), pk.Type(),
+		)
+	}
+	return pk, nil
 }
 
 // PublicKeyParse parses the data field of a public key line into a ssh.PublicKey.

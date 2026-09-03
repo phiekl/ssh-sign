@@ -46,6 +46,8 @@ func TestPublicKeyLineParseRejectsGarbage(t *testing.T) {
 		"type without key": "ssh-ed25519",
 		"not base64":       "@@@@",
 		"not a public key": "aGVsbG8=",
+		// Reject a stated type that disagrees with the encoded key.
+		"key type mismatch": "ssh-rsa " + testKeyBlob(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := PublicKeyLineParse(line); err == nil {
