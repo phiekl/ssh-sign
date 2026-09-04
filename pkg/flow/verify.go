@@ -197,6 +197,12 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		res.Authentication = "valid"
 	}
 
+	// Enforce the certificate's own validity window too.
+	if err := sshsig.CertificateValidAt(sig.PublicKey, timestamp); err != nil {
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf("signature %v", err))
+	}
+
 	if err := sshsig.SignatureVerify(opts.VerifyFile, sig); err == nil {
 		res.Verification = "valid"
 	} else {

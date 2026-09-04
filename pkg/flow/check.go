@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -21,6 +22,7 @@ type CheckOpts struct {
 	NoAuthKey     bool
 	NoNamespace   bool
 	SignatureFile io.Reader
+	Timestamp     time.Time
 	VerifyFile    io.Reader
 }
 
@@ -77,17 +79,29 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	}
 	debugSignature(opts.Log, "check", sig)
 
+	timestamp := opts.Timestamp
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+
 	res := CheckResult{}
 	if opts.NoAuthKey {
+		// -K skips signer authentication, including certificate validity.
 		res.Authentication = "disabled"
-	} else if sshsig.PublicKeyEqual(pk, sig.PublicKey) {
-		res.Authentication = "valid"
 	} else {
-		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf(
-			"signature was created by public key %q (expected %q)",
-			sshsig.PublicKeyString(sig.PublicKey), sshsig.PublicKeyString(pk),
-		))
+		// Report key mismatches and certificate errors independently.
+		res.Authentication = "valid"
+		if !sshsig.PublicKeyEqual(pk, sig.PublicKey) {
+			res.Authentication = "invalid"
+			errs = append(errs, fmt.Errorf(
+				"signature was created by public key %q (expected %q)",
+				sshsig.PublicKeyString(sig.PublicKey), sshsig.PublicKeyString(pk),
+			))
+		}
+		if err := sshsig.CertificateValidAt(sig.PublicKey, timestamp); err != nil {
+			res.Authentication = "invalid"
+			errs = append(errs, fmt.Errorf("signature %v", err))
+		}
 	}
 
 	if opts.NoNamespace {

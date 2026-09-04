@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -56,6 +57,10 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	pk := opts.Signer.PublicKey()
 	if isNil(pk) {
 		return nil, append(errs, fmt.Errorf("signer public key is required"))
+	}
+	// Check certificate validity before asking the agent to sign.
+	if err := sshsig.CertificateValidAt(pk, time.Now()); err != nil {
+		return nil, append(errs, fmt.Errorf("signing key %v", err))
 	}
 	cli.Debug(opts.Log, cli.LevelDebug1, "sign: signing",
 		"namespace", opts.Namespace, keyAttr("key", pk),

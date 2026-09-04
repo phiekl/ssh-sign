@@ -17,5 +17,5 @@ SPDX-License-Identifier: MIT
 - [ ] verify: JSON input?
 - [ ] verify: Colorized output?
 - [ ] verify: agent/daemon mode that could be run isolated?
-- [ ] verify: Support `cert-authority` entries, currently a hard parse error.
+- [ ] verify: Support `cert-authority` entries, currently a skipped line.
 - [ ] Report whether the process got sandboxed, in JSON output at least.

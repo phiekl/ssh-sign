@@ -47,6 +47,18 @@ continue without restriction.
 > This reduces the impact of a bug - it is not a complete sandbox.
 
 
+## Certificates
+
+OpenSSH certificates must be trusted explicitly with `check -k` or an
+allowed signers entry; `cert-authority` is not supported.
+
+Certificates must be user certificates valid at verification time (`-t` or
+the current time). `check -K` skips these checks. `sign` requires the
+certificate to be valid now.
+
+CA signatures and certificate principals are not checked.
+
+
 ## Result fields
 
 `verify` and `check` reports various information and result fields:
@@ -217,7 +229,11 @@ Alternatively with JSON output via e.g. `ssh-sign -j inspect -s data.sig`:
   -N, --no-namespace            accept a signature with any namespace
   -k, --auth-key string         require a signature created by specified public key
   -K, --no-auth-key             accept a signature created by any public key
+  -t, --timestamp string        validate this RFC3339/RFC1123 timestamp rather than current time
 ```
+
+> [!NOTE]
+> For `check`, `-t` only affects certificate validity.
 
 #### Example
 

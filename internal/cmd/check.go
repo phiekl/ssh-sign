@@ -21,6 +21,7 @@ type CheckCommand struct {
 	commandOpts flow.CheckOpts
 
 	signatureFile string
+	timestamp     string
 	verifyFile    string
 }
 
@@ -32,7 +33,18 @@ func (c *CheckCommand) Command() (any, []error) {
 		c.commandOpts.Namespace = ""
 	}
 
+	// Report all invalid flags together.
 	var errs []error
+	if c.timestamp != "" {
+		ts, err := helper.ParseTimestamp(c.timestamp)
+		if err != nil {
+			errs = append(errs, cli.MarkUsage(
+				fmt.Errorf("invalid timestamp %q: %v", c.timestamp, err),
+			))
+		} else {
+			c.commandOpts.Timestamp = ts
+		}
+	}
 	if err := flow.CheckAuthKey(
 		c.commandOpts.AuthKey, c.commandOpts.NoAuthKey,
 	); err != nil {
@@ -120,4 +132,11 @@ func (c *CheckCommand) Args() {
 		"accept a signature created by any public key",
 	)
 	c.ArgP.MutuallyExclusive("auth-key", "no-auth-key")
+
+	c.ArgP.StringVarP(
+		&c.timestamp,
+		"timestamp", "t", "",
+		"validate this RFC3339/RFC1123 timestamp rather than current time",
+	)
+	c.ArgP.StringDenyEmpty(&c.timestamp, "timestamp")
 }
