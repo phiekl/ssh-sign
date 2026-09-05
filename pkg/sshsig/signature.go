@@ -116,16 +116,18 @@ func (s rsaSHA512Signer) Sign(random io.Reader, data []byte) (*ssh.Signature, er
 	return s.algorithmSigner.SignWithAlgorithm(random, data, ssh.KeyAlgoRSASHA512)
 }
 
+// publicKeyType returns the signing key type, unwrapping certificates
+// including those held by an agent.
 func publicKeyType(pk ssh.PublicKey) string {
-	if cert, ok := pk.(*ssh.Certificate); ok {
+	if cert, _ := asCertificate(pk); cert != nil {
 		return cert.Key.Type()
 	}
 	return pk.Type()
 }
 
 func isRSACertificate(pk ssh.PublicKey) bool {
-	cert, ok := pk.(*ssh.Certificate)
-	return ok && cert.Key.Type() == ssh.KeyAlgoRSA
+	cert, _ := asCertificate(pk)
+	return cert != nil && cert.Key.Type() == ssh.KeyAlgoRSA
 }
 
 // ReadError wraps a failure to read the message being signed or verified.
