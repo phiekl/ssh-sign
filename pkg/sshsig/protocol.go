@@ -92,16 +92,15 @@ type Signature struct {
 	Signature     *ssh.Signature
 }
 
-// hashMessage reduces the input data to a digest, streaming it rather than
-// buffering it. Reader failures are returned as-is, so callers can tell them
-// apart from a rejected message.
+// hashMessage streams input into a digest and wraps read failures in ReadError.
 func hashMessage(in io.Reader, h HashAlgorithm) ([]byte, error) {
 	hasher, err := h.hash()
 	if err != nil {
 		return nil, err
 	}
+	// A hash never fails to write, so a failure here is always the reader's.
 	if _, err := io.Copy(hasher, in); err != nil {
-		return nil, err
+		return nil, &ReadError{Err: err}
 	}
 	return hasher.Sum(nil), nil
 }

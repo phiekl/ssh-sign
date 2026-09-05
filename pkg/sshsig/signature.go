@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -127,10 +128,32 @@ func isRSACertificate(pk ssh.PublicKey) bool {
 	return ok && cert.Key.Type() == ssh.KeyAlgoRSA
 }
 
+// ReadError wraps a failure to read the message being signed or verified.
+type ReadError struct {
+	Err error
+}
+
+func (e *ReadError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *ReadError) Unwrap() error {
+	return e.Err
+}
+
+// IsReadError reports whether err or one of its causes is a ReadError.
+func IsReadError(err error) bool {
+	var readErr *ReadError
+	return errors.As(err, &readErr)
+}
+
 // SignatureVerify checks if a signature verifies to the input data. It does
 // *not* validate the authenticity of the pubkey or namespace.
 func SignatureVerify(in io.Reader, sig *Signature) error {
 	if err := Verify(in, sig); err != nil {
+		if IsReadError(err) {
+			return err
+		}
 		err = boundedError(err)
 		if msg := err.Error(); strings.HasPrefix(msg, "ssh: ") {
 			return fmt.Errorf("%s", strings.TrimPrefix(msg, "ssh: "))

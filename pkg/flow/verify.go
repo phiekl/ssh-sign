@@ -203,9 +203,13 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		errs = append(errs, fmt.Errorf("signature %v", err))
 	}
 
-	if err := sshsig.SignatureVerify(opts.VerifyFile, sig); err == nil {
+	switch err := sshsig.SignatureVerify(opts.VerifyFile, sig); {
+	case err == nil:
 		res.Verification = "valid"
-	} else {
+	case sshsig.IsReadError(err):
+		// A read failure leaves verification undecided.
+		return nil, append(errs, fmt.Errorf("failed reading data to verify: %v", err))
+	default:
 		res.Verification = "invalid"
 		errs = append(errs, err)
 	}
