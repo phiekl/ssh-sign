@@ -340,6 +340,64 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			principal: "alice@example.com", ourTime: "2026-01-15T00:00:00Z",
 			openSSHTime: "20260115Z", wantAccepted: false,
 		},
+
+		// ssh-keygen rejects unquoted option values, including namespaces=*.
+		{
+			name: "unquoted option value", line: `alice@example.com namespaces=file ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name: "unquoted wildcard option value", line: `alice@example.com namespaces=* ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name: "unquoted validity option", line: `alice@example.com valid-after=20200101Z ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+
+		// ssh-keygen ends the field at the first closing quote.
+		{
+			name: "quoted principal", line: `"alice@example.com" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
+			name: "quoted principal list", line: `"alice@example.com,bob@example.com" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
+			name: "spliced quoted principals", line: `"alice@example.com,bob","carol" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+
+		// Empty pattern elements match only empty values.
+		{
+			name: "empty pattern in principals", line: "alice@example.com,,bob@example.com " + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
+			name: "empty pattern in namespaces", line: `alice@example.com namespaces="file,,x" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+
+		// Malformed lines must not prevent later entries from matching.
+		{
+			name: "cert-authority line before a usable one",
+			line: "bob@example.com cert-authority " + keyLine + "\n" +
+				"alice@example.com " + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
+			name: "unparseable line before a usable one",
+			line: "this is not an entry\n" +
+				"alice@example.com " + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
+			name: "unknown option before a usable one",
+			line: `bob@example.com unknownopt="x" ` + keyLine + "\n" +
+				"alice@example.com " + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
 	}
 
 	for _, tt := range tests {
