@@ -123,7 +123,7 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 	e.KeyBase64 = fields[keyTypeIdx+1]
 
 	// Validate/parse key.
-	pk, err := sshsig.PublicKeyParse(e.KeyBase64)
+	pk, err := sshsig.ParsePublicKey(e.KeyBase64)
 	if err != nil {
 		return nil, &ParseError{Line: n, Msg: fmt.Sprintf("invalid ssh public key: %v", err)}
 	}

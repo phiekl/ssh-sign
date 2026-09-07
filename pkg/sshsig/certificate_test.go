@@ -154,9 +154,9 @@ func TestCertificateValidAtHandlesNilKeys(t *testing.T) {
 
 // Plain keys have no certificate validity window.
 func TestCertificateValidAtIgnoresPlainKeys(t *testing.T) {
-	pk, err := PublicKeyLineParse(testKey)
+	pk, err := ParsePublicKeyLine(testKey)
 	if err != nil {
-		t.Fatalf("PublicKeyLineParse() error = %v", err)
+		t.Fatalf("ParsePublicKeyLine() error = %v", err)
 	}
 	if err := CertificateValidAt(pk, time.Now()); err != nil {
 		t.Errorf("CertificateValidAt() error = %v, want nil for a plain key", err)

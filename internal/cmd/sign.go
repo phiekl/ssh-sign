@@ -29,7 +29,7 @@ func (c *SignCommand) Command() (any, []error) {
 	log := commandLog(c.GlobalOpts)
 	c.commandOpts.Log = log
 
-	pk, err := sshsig.PublicKeyLineParse(c.signKey)
+	pk, err := sshsig.ParsePublicKeyLine(c.signKey)
 	if err != nil {
 		return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err))}
 	}
@@ -52,7 +52,7 @@ func (c *SignCommand) Command() (any, []error) {
 
 	// Connect to the agent before restricting pathname access. A failure to
 	// hand back the socket after signing does not invalidate the signature.
-	conn, agent, err := sshsig.AgentConnect(log)
+	conn, agent, err := sshsig.ConnectAgent(log)
 	if err != nil {
 		return nil, []error{fmt.Errorf("failed agent connection: %v", err)}
 	}

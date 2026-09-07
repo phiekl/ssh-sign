@@ -133,7 +133,7 @@ func TestParseSignatureOpenSSHVectors(t *testing.T) {
 				t.Errorf("Signature.Format = %q, want %q", sig.Signature.Format, tt.sigFormat)
 			}
 
-			want, err := PublicKeyLineParse(tt.keyLine)
+			want, err := ParsePublicKeyLine(tt.keyLine)
 			if err != nil {
 				t.Fatalf("parsing vector key: %v", err)
 			}

@@ -66,7 +66,7 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	}
 
 	if !opts.NoAuthKey {
-		pk, err = sshsig.PublicKeyLineParse(opts.AuthKey)
+		pk, err = sshsig.ParsePublicKeyLine(opts.AuthKey)
 		if err != nil {
 			return nil, append(errs, fmt.Errorf("invalid authentication key: %v", err))
 		}

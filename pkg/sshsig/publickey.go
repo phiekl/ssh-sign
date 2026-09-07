@@ -18,9 +18,9 @@ func PublicKeyEqual(pk1, pk2 ssh.PublicKey) bool {
 	return bytes.Equal(pk1.Marshal(), pk2.Marshal())
 }
 
-// PublicKeyLineParse parses a string like "[type] <data> [comment ...]" similar
+// ParsePublicKeyLine parses a string like "[type] <data> [comment ...]" similar
 // to ssh.ParseAuthorizedKey(), but only cares about the data field.
-func PublicKeyLineParse(pkLine string) (ssh.PublicKey, error) {
+func ParsePublicKeyLine(pkLine string) (ssh.PublicKey, error) {
 	// pkgStr should contain "[type] <data> [comment ...]". If "type" was
 	// required here, ssh.ParseAuthorizedKey() could have been used instead.
 	tokens := strings.Fields(pkLine)
@@ -39,7 +39,7 @@ func PublicKeyLineParse(pkLine string) (ssh.PublicKey, error) {
 		pkEnc = tokens[1]
 	}
 
-	pk, err := PublicKeyParse(pkEnc)
+	pk, err := ParsePublicKey(pkEnc)
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +52,8 @@ func PublicKeyLineParse(pkLine string) (ssh.PublicKey, error) {
 	return pk, nil
 }
 
-// PublicKeyParse parses the data field of a public key line into a ssh.PublicKey.
-func PublicKeyParse(pkEnc string) (ssh.PublicKey, error) {
+// ParsePublicKey parses the data field of a public key line into a ssh.PublicKey.
+func ParsePublicKey(pkEnc string) (ssh.PublicKey, error) {
 	pkDec, err := base64.StdEncoding.DecodeString(pkEnc)
 	if err != nil {
 		return nil, fmt.Errorf("failed decoding %s: %v", QuoteToken(pkEnc), err)

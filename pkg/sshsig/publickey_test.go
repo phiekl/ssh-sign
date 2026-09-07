@@ -18,7 +18,7 @@ func testKeyBlob() string {
 	return strings.Fields(testKey)[1]
 }
 
-func TestPublicKeyLineParse(t *testing.T) {
+func TestParsePublicKeyLine(t *testing.T) {
 	blob := testKeyBlob()
 
 	for name, line := range map[string]string{
@@ -28,18 +28,18 @@ func TestPublicKeyLineParse(t *testing.T) {
 		"surrounding space": "  " + testKey + "  ",
 	} {
 		t.Run(name, func(t *testing.T) {
-			pk, err := PublicKeyLineParse(line)
+			pk, err := ParsePublicKeyLine(line)
 			if err != nil {
-				t.Fatalf("PublicKeyLineParse(%q) error = %v", line, err)
+				t.Fatalf("ParsePublicKeyLine(%q) error = %v", line, err)
 			}
 			if got := PublicKeyString(pk); got != testKey {
-				t.Errorf("PublicKeyLineParse(%q) = %q, want %q", line, got, testKey)
+				t.Errorf("ParsePublicKeyLine(%q) = %q, want %q", line, got, testKey)
 			}
 		})
 	}
 }
 
-func TestPublicKeyLineParseRejectsGarbage(t *testing.T) {
+func TestParsePublicKeyLineRejectsGarbage(t *testing.T) {
 	for name, line := range map[string]string{
 		"empty":            "",
 		"whitespace only":  "   ",
@@ -50,26 +50,26 @@ func TestPublicKeyLineParseRejectsGarbage(t *testing.T) {
 		"key type mismatch": "ssh-rsa " + testKeyBlob(),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := PublicKeyLineParse(line); err == nil {
-				t.Errorf("PublicKeyLineParse(%q) unexpectedly succeeded", line)
+			if _, err := ParsePublicKeyLine(line); err == nil {
+				t.Errorf("ParsePublicKeyLine(%q) unexpectedly succeeded", line)
 			}
 		})
 	}
 }
 
-func TestPublicKeyParseTruncatesTheEchoedToken(t *testing.T) {
+func TestParsePublicKeyTruncatesTheEchoedToken(t *testing.T) {
 	token := strings.Repeat("A", 1<<20) + "@"
 
-	_, err := PublicKeyParse(token)
+	_, err := ParsePublicKey(token)
 	if err == nil {
-		t.Fatal("PublicKeyParse() unexpectedly succeeded")
+		t.Fatal("ParsePublicKey() unexpectedly succeeded")
 	}
 	if len(err.Error()) > 512 {
-		t.Errorf("PublicKeyParse() error is %d bytes long, want the token truncated",
+		t.Errorf("ParsePublicKey() error is %d bytes long, want the token truncated",
 			len(err.Error()))
 	}
 	if !strings.Contains(err.Error(), "1048577 bytes total") {
-		t.Errorf("PublicKeyParse() error = %v, want the full token length reported", err)
+		t.Errorf("ParsePublicKey() error = %v, want the full token length reported", err)
 	}
 }
 
@@ -98,13 +98,13 @@ func TestNewPublicKeyInfo(t *testing.T) {
 }
 
 func TestPublicKeyEqual(t *testing.T) {
-	first, err := PublicKeyLineParse(testKey)
+	first, err := ParsePublicKeyLine(testKey)
 	if err != nil {
-		t.Fatalf("PublicKeyLineParse() error = %v", err)
+		t.Fatalf("ParsePublicKeyLine() error = %v", err)
 	}
-	second, err := PublicKeyLineParse(testKey)
+	second, err := ParsePublicKeyLine(testKey)
 	if err != nil {
-		t.Fatalf("PublicKeyLineParse() error = %v", err)
+		t.Fatalf("ParsePublicKeyLine() error = %v", err)
 	}
 	if !PublicKeyEqual(first, second) {
 		t.Error("PublicKeyEqual() = false for two parses of the same key")
@@ -112,9 +112,9 @@ func TestPublicKeyEqual(t *testing.T) {
 
 	// Flip the last base64 character to get a different, still valid, key blob.
 	blob := testKeyBlob()
-	other, err := PublicKeyParse(blob[:len(blob)-2] + "aa")
+	other, err := ParsePublicKey(blob[:len(blob)-2] + "aa")
 	if err != nil {
-		t.Fatalf("PublicKeyParse() error = %v", err)
+		t.Fatalf("ParsePublicKey() error = %v", err)
 	}
 	if PublicKeyEqual(first, other) {
 		t.Error("PublicKeyEqual() = true for two different keys")

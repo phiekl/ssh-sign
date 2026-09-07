@@ -19,8 +19,8 @@ import (
 // Bound noninteractive agent operations. Signing may wait for user input.
 const agentTimeout = 30 * time.Second
 
-// AgentConnect connects to SSH_AUTH_SOCK. log may be nil.
-func AgentConnect(log *slog.Logger) (net.Conn, agent.Agent, error) {
+// ConnectAgent connects to SSH_AUTH_SOCK. log may be nil.
+func ConnectAgent(log *slog.Logger) (net.Conn, agent.Agent, error) {
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock == "" {
 		return nil, nil, fmt.Errorf("SSH_AUTH_SOCK is not set, an ssh-agent is required for signing")
