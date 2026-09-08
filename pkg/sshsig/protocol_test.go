@@ -644,3 +644,50 @@ func newDSASigner(t *testing.T) ssh.Signer {
 	}
 	return signer
 }
+
+// Verify must reject malformed signatures even when the caller builds them.
+func TestVerifyRejectsWhatParsingRejects(t *testing.T) {
+	signer := newSigner(t)
+	tests := map[string]struct {
+		mutate  func(*Signature)
+		wantErr string
+	}{
+		"trailing signature bytes": {
+			mutate:  func(s *Signature) { s.Signature.Rest = []byte("TRAILING") },
+			wantErr: "trailing data",
+		},
+		"empty namespace": {
+			mutate:  func(s *Signature) { s.Namespace = "" },
+			wantErr: "namespace is empty",
+		},
+		"namespace NUL byte": {
+			mutate:  func(s *Signature) { s.Namespace = "file\x00evil" },
+			wantErr: "NUL",
+		},
+		"unsupported hash algorithm": {
+			mutate:  func(s *Signature) { s.HashAlgorithm = "sha1" },
+			wantErr: `unsupported hash algorithm "sha1"`,
+		},
+		"signature format the key cannot produce": {
+			mutate:  func(s *Signature) { s.Signature.Format = ssh.KeyAlgoRSASHA512 },
+			wantErr: `invalid signature format "rsa-sha2-512"`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			sig, err := Sign(strings.NewReader("data\n"), signer, HashSHA512, "file")
+			if err != nil {
+				t.Fatalf("Sign() error = %v", err)
+			}
+			tt.mutate(sig)
+			if _, err := ParseSignature(Marshal(sig)); err == nil {
+				t.Fatal("ParseSignature() accepted the signature, adjust this test")
+			}
+			if err := Verify(strings.NewReader("data\n"), sig); err == nil ||
+				!strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Verify() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}

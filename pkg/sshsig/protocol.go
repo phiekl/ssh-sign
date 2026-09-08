@@ -177,14 +177,8 @@ func Verify(in io.Reader, sig *Signature) error {
 	if sig == nil || sig.PublicKey == nil || sig.Signature == nil {
 		return fmt.Errorf("incomplete signature")
 	}
-	if sig.Version != sigVersion {
-		return fmt.Errorf(
-			"unsupported signature version %d: expected %d", sig.Version, sigVersion,
-		)
-	}
-	// The reserved field is unsigned and must be empty.
-	if sig.Reserved != "" {
-		return fmt.Errorf("signature reserved field is not empty")
+	if err := validateStructure(sig); err != nil {
+		return err
 	}
 	// A signature ssh-keygen refuses must never verify here either, however it
 	// was obtained.
@@ -210,12 +204,6 @@ func ParseSignature(blob []byte) (*Signature, error) {
 			"invalid magic preamble %s: expected %q", QuoteToken(preamble), magicPreamble,
 		)
 	}
-	if wire.Version != sigVersion {
-		return nil, fmt.Errorf(
-			"unsupported signature version %d: expected %d", wire.Version, sigVersion,
-		)
-	}
-
 	pk, err := ssh.ParsePublicKey([]byte(wire.PublicKey))
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key: %v", boundedError(err))
@@ -224,40 +212,52 @@ func ParseSignature(blob []byte) (*Signature, error) {
 	if err := ssh.Unmarshal([]byte(wire.Signature), &sshSig); err != nil {
 		return nil, fmt.Errorf("invalid signature field: %v", boundedError(err))
 	}
-	// Unmarshal collects whatever follows the signature in Rest. Only a
-	// security key puts anything there, its flags and counter; for every other
-	// algorithm those bytes are unsigned padding that ssh-keygen refuses,
-	// which would otherwise make a verified signature file malleable.
-	if len(sshSig.Rest) != 0 && !isSecurityKey(publicKeyType(pk)) {
-		return nil, fmt.Errorf("signature contains %d bytes of trailing data", len(sshSig.Rest))
-	}
 
-	// Reject unsigned reserved data to prevent malleability.
-	if wire.Reserved != "" {
-		return nil, fmt.Errorf("signature reserved field is not empty")
-	}
-	if wire.Namespace == "" {
-		return nil, fmt.Errorf("signature namespace is empty")
-	}
-	if err := validateNamespace(wire.Namespace); err != nil {
-		return nil, err
-	}
-	hashAlgorithm := HashAlgorithm(wire.HashAlgorithm)
-	if _, err := hashAlgorithm.hash(); err != nil {
-		return nil, err
-	}
-	if err := validateSignatureFormat(pk, sshSig.Format); err != nil {
-		return nil, err
-	}
-
-	return &Signature{
+	sig := &Signature{
 		Version:       wire.Version,
 		PublicKey:     pk,
 		Namespace:     wire.Namespace,
 		Reserved:      wire.Reserved,
-		HashAlgorithm: hashAlgorithm,
+		HashAlgorithm: HashAlgorithm(wire.HashAlgorithm),
 		Signature:     &sshSig,
-	}, nil
+	}
+	if err := validateStructure(sig); err != nil {
+		return nil, err
+	}
+	return sig, nil
+}
+
+// validateStructure checks signature fields without reading the message.
+// Parsing and verification use the same checks.
+func validateStructure(sig *Signature) error {
+	if sig.Version != sigVersion {
+		return fmt.Errorf(
+			"unsupported signature version %d: expected %d", sig.Version, sigVersion,
+		)
+	}
+	// Unmarshal collects whatever follows the signature in Rest. Only a
+	// security key puts anything there, its flags and counter; for every other
+	// algorithm those bytes are unsigned padding that ssh-keygen refuses,
+	// which would otherwise make a verified signature file malleable.
+	if len(sig.Signature.Rest) != 0 && !isSecurityKey(publicKeyType(sig.PublicKey)) {
+		return fmt.Errorf(
+			"signature contains %d bytes of trailing data", len(sig.Signature.Rest),
+		)
+	}
+	// Reject unsigned reserved data to prevent malleability.
+	if sig.Reserved != "" {
+		return fmt.Errorf("signature reserved field is not empty")
+	}
+	if sig.Namespace == "" {
+		return fmt.Errorf("signature namespace is empty")
+	}
+	if err := validateNamespace(sig.Namespace); err != nil {
+		return err
+	}
+	if _, err := sig.HashAlgorithm.hash(); err != nil {
+		return err
+	}
+	return validateSignatureFormat(sig.PublicKey, sig.Signature.Format)
 }
 
 // isSecurityKey reports whether the key type is a FIDO authenticator key,
