@@ -184,9 +184,11 @@ func TestSignatureReadBoundsHostileFields(t *testing.T) {
 			}),
 			wantErr: "unsupported hash algorithm",
 		},
+		// pem.Decode reads the type up to the last "-----" on the line, so a
+		// hostile type can still follow the required header.
 		"PEM type": {
-			input: "-----BEGIN SSH SIGNATURE-----JUNK\n" +
-				"-----BEGIN " + huge + "-----\nAAAA\n-----END " + huge + "-----\n",
+			input: "-----BEGIN SSH SIGNATURE-----" + huge + "-----\nAAAA\n" +
+				"-----END SSH SIGNATURE-----" + huge + "-----\n",
 			wantErr: "invalid PEM type",
 		},
 	}
@@ -256,6 +258,11 @@ func TestSignatureRead(t *testing.T) {
 		"not armored": {input: "hello\n", wantErr: "unarmoring data failed"},
 		"non-empty reserved field": {
 			input: nonEmptyReserved, wantErr: "reserved field is not empty",
+		},
+		// Reject a malformed header even if a valid block follows it.
+		"data before signature": {
+			input:   "-----BEGIN SSH SIGNATURE-----\ngarbage\n" + armored,
+			wantErr: "data found before signature",
 		},
 		// Oversized input is refused rather than buffered without bound.
 		"too large": {

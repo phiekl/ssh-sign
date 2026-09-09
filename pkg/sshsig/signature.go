@@ -63,6 +63,11 @@ func signatureRead(in io.Reader, max int64) (*Signature, error) {
 	if block == nil {
 		return nil, fmt.Errorf("unarmoring data failed: invalid PEM block")
 	}
+	// pem.Decode might skip a malformed block and read the valid one afterwards,
+	// so reject a second header before the decoded block ends.
+	if bytes.Contains(data[len(armorHeader):len(data)-len(rest)], []byte("-----BEGIN ")) {
+		return nil, fmt.Errorf("unarmoring data failed: data found before signature")
+	}
 	// The prefix does not constrain a later PEM block's type.
 	if block.Type != PEMType {
 		return nil, fmt.Errorf(
