@@ -319,3 +319,11 @@ func TestNewSignatureInfo(t *testing.T) {
 		t.Errorf("PublicKey.Fingerprint = %q, want the signer's", info.PublicKey.Fingerprint)
 	}
 }
+
+// Sign rejects a nil signer, so SignatureCreate must not panic on one first.
+func TestSignatureCreateRejectsANilSigner(t *testing.T) {
+	_, err := SignatureCreate(nil, "file", strings.NewReader("data\n"))
+	if err == nil || !strings.Contains(err.Error(), "a signer is required") {
+		t.Fatalf("SignatureCreate() error = %v, want a rejected signer", err)
+	}
+}

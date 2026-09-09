@@ -21,6 +21,10 @@ const maxSignatureArmorSize = 1 << 20
 
 // SignatureCreate creates a signature of the input data.
 func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*Signature, error) {
+	// Sign rejects this too, but PublicKey() below would panic first.
+	if signer == nil {
+		return nil, fmt.Errorf("signing failed: a signer is required")
+	}
 	if isRSACertificate(signer.PublicKey()) {
 		algorithmSigner, ok := signer.(ssh.AlgorithmSigner)
 		if !ok {
