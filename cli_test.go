@@ -632,6 +632,33 @@ func TestErrorsCarryNoTerminalEscapes(t *testing.T) {
 	}
 }
 
+// Result output must escape control characters in parsed namespaces.
+func TestResultsCarryNoTerminalEscapes(t *testing.T) {
+	for name, namespace := range map[string]string{
+		"C0":        "file" + string(rune(0x1b)) + "]0;PWNED" + string(rune(0x07)),
+		"C1":        "file" + string(rune(0x9b)) + "31m",
+		"lone byte": "file" + string([]byte{0x9b}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, namespace)
+
+			for _, args := range [][]string{
+				{"inspect", "-s", f.signature},
+				{"-j", "inspect", "-s", f.signature},
+				{"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-N"},
+			} {
+				stdout, stderr, code := run(t, args...)
+				if code != 0 {
+					t.Fatalf("%v exit status = %d, want 0 (stderr: %s)", args, code, stderr)
+				}
+				if hasRawControl(stdout) {
+					t.Errorf("%v stdout = %q, want no raw control characters", args, stdout)
+				}
+			}
+		})
+	}
+}
+
 func TestInspectTextAndJSONAgreeOnFields(t *testing.T) {
 	f := newFixture(t, "file")
 

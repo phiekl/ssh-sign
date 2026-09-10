@@ -5,42 +5,32 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-func ResultFormatKV(data any, pad int, prefix, delim, keyPrefix string, keys ...string) string {
-	// Marshal to JSON first to get correct key names and type conversions.
-	dataEnc, err := json.Marshal(data)
-	if err != nil {
-		return fmt.Sprintf("[INTERNAL ERROR] json.Marshal(): %v", err)
-	}
+// Field is a single result field rendered by ResultFormatKV.
+type Field struct {
+	Key   string
+	Value any
+}
 
-	// UseNumber keeps numbers as their literal text. Decoding them into float64
-	// would render 1 as "1e+06" once it gets large enough.
-	dec := json.NewDecoder(bytes.NewReader(dataEnc))
-	dec.UseNumber()
+// KV returns a Field for ResultFormatKV.
+func KV(key string, value any) Field {
+	return Field{Key: key, Value: value}
+}
 
-	var dataDec map[string]any
-	if err := dec.Decode(&dataDec); err != nil {
-		return fmt.Sprintf("[INTERNAL ERROR] json.Decode(): %v", err)
-	}
-
+// ResultFormatKV renders fields as "<prefix><key><delim><value>" lines. Each
+// key uses the width specified by pad. Values holding control characters or
+// invalid UTF-8 are quoted.
+func ResultFormatKV(pad int, prefix, delim string, fields ...Field) string {
 	lineFmt := fmt.Sprintf("%s%%%ds%s%%v", prefix, pad, delim)
 
-	lines := make([]string, 0, len(keys))
-	for _, k := range keys {
-		value, ok := dataDec[k]
-		if !ok {
-			// A key that no longer exists would otherwise print as "<nil>",
-			// which is easy to miss when a JSON tag gets renamed.
-			value = fmt.Sprintf("[INTERNAL ERROR] no such key: %s", k)
-		}
-		lines = append(lines, fmt.Sprintf(lineFmt, keyPrefix+k, escapeControl(value)))
+	lines := make([]string, 0, len(fields))
+	for _, f := range fields {
+		lines = append(lines, fmt.Sprintf(lineFmt, f.Key, escapeControl(f.Value)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -91,10 +81,11 @@ func EscapeJSONControls(encoded []byte) []byte {
 	return append(out, encoded[last:]...)
 }
 
-// escapeControl quotes strings containing terminal controls.
+// escapeControl quotes strings containing terminal controls or invalid UTF-8.
+// Check UTF-8 separately: invalid bytes decode as RuneError, not controls.
 func escapeControl(value any) any {
 	s, ok := value.(string)
-	if !ok || !strings.ContainsFunc(s, isControl) {
+	if !ok || (utf8.ValidString(s) && !strings.ContainsFunc(s, isControl)) {
 		return value
 	}
 	return strconv.Quote(s)

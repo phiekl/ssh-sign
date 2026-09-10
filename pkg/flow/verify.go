@@ -35,10 +35,12 @@ type VerifyResult struct {
 }
 
 func (r VerifyResult) String() string {
-	return cli.ResultFormatKV(
-		r,
-		-15, " ", "= ", "",
-		"principal", "authentication", "namespace", "designation", "verification",
+	return cli.ResultFormatKV(-15, " ", "= ",
+		cli.KV("principal", r.Principal),
+		cli.KV("authentication", r.Authentication),
+		cli.KV("namespace", r.Namespace),
+		cli.KV("designation", r.Designation),
+		cli.KV("verification", r.Verification),
 	)
 }
 

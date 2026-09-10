@@ -33,10 +33,10 @@ type CheckResult struct {
 }
 
 func (r CheckResult) String() string {
-	return cli.ResultFormatKV(
-		r,
-		-15, " ", "= ", "",
-		"authentication", "designation", "verification",
+	return cli.ResultFormatKV(-15, " ", "= ",
+		cli.KV("authentication", r.Authentication),
+		cli.KV("designation", r.Designation),
+		cli.KV("verification", r.Verification),
 	)
 }
 

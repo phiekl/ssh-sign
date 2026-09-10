@@ -23,31 +23,16 @@ type InspectResult struct {
 }
 
 func (r InspectResult) String() string {
-	out := ""
-	out += cli.ResultFormatKV(
-		r,
-		-22, " ", "| ", "",
-		"version",
+	return cli.ResultFormatKV(-22, " ", "| ",
+		cli.KV("version", r.Version),
+		cli.KV("publickey_format", r.PublicKey.Format),
+		cli.KV("publickey_blob", r.PublicKey.Blob),
+		cli.KV("publickey_fingerprint", r.PublicKey.Fingerprint),
+		cli.KV("namespace", r.Namespace),
+		cli.KV("hash_algorithm", r.HashAlgorithm),
+		cli.KV("signature_format", r.Signature.Format),
+		cli.KV("signature_blob", r.Signature.Blob),
 	)
-	out += "\n"
-	out += cli.ResultFormatKV(
-		r.PublicKey,
-		-22, " ", "| ", "publickey_",
-		"format", "blob", "fingerprint",
-	)
-	out += "\n"
-	out += cli.ResultFormatKV(
-		r,
-		-22, " ", "| ", "",
-		"namespace", "hash_algorithm",
-	)
-	out += "\n"
-	out += cli.ResultFormatKV(
-		r.Signature,
-		-22, " ", "| ", "signature_",
-		"format", "blob",
-	)
-	return out
 }
 
 func Inspect(opts *InspectOpts) (*InspectResult, []error) {

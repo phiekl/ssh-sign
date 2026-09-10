@@ -11,40 +11,11 @@ import (
 	"unicode/utf8"
 )
 
-type sample struct {
-	Name    string `json:"name"`
-	Count   int    `json:"count"`
-	Skipped string `json:"-"`
-}
-
 func TestResultFormatKV(t *testing.T) {
-	got := ResultFormatKV(
-		sample{Name: "alice", Count: 3, Skipped: "hidden"},
-		-6, " ", "= ", "",
-		"name", "count",
-	)
+	got := ResultFormatKV(-6, " ", "= ", KV("name", "alice"), KV("count", 3))
 	want := " name  = alice\n count = 3"
 	if got != want {
 		t.Errorf("ResultFormatKV() =\n%q\nwant\n%q", got, want)
-	}
-}
-
-func TestResultFormatKVUsesTheKeyPrefixInOutputOnly(t *testing.T) {
-	got := ResultFormatKV(sample{Name: "alice"}, -10, " ", "| ", "user_", "name")
-	if want := " user_name | alice"; got != want {
-		t.Errorf("ResultFormatKV() = %q, want %q", got, want)
-	}
-}
-
-func TestResultFormatKVFlagsAnUnknownKey(t *testing.T) {
-	got := ResultFormatKV(sample{Name: "alice"}, -6, " ", "= ", "", "nope")
-	if !strings.Contains(got, "no such key: nope") {
-		t.Errorf("ResultFormatKV() = %q, want it to flag the missing key", got)
-	}
-	// A field excluded from JSON is just as unreachable.
-	got = ResultFormatKV(sample{Skipped: "hidden"}, -6, " ", "= ", "", "Skipped")
-	if !strings.Contains(got, "no such key: Skipped") {
-		t.Errorf("ResultFormatKV() = %q, want it to flag the missing key", got)
 	}
 }
 
@@ -53,7 +24,7 @@ func TestResultFormatKVEscapesControlCharacters(t *testing.T) {
 		"file" + string(rune(0x1b)) + "]0;PWNED" + string(rune(0x07)),
 		"file" + string(rune(0x9b)) + "31m",
 	} {
-		got := ResultFormatKV(sample{Name: name}, -5, "", "= ", "", "name")
+		got := ResultFormatKV(-5, "", "= ", KV("name", name))
 		if want := "name = " + strconv.Quote(name); got != want {
 			t.Errorf("ResultFormatKV() = %q, want %q", got, want)
 		}
@@ -62,9 +33,20 @@ func TestResultFormatKVEscapesControlCharacters(t *testing.T) {
 		}
 	}
 
-	got := ResultFormatKV(sample{Name: "signaturé"}, -5, "", "= ", "", "name")
+	got := ResultFormatKV(-5, "", "= ", KV("name", "signaturé"))
 	if want := "name = signaturé"; got != want {
 		t.Errorf("ResultFormatKV() = %q, want %q", got, want)
+	}
+}
+
+// Invalid UTF-8 must be quoted even when no control rune is found.
+func TestResultFormatKVQuotesInvalidUTF8(t *testing.T) {
+	got := ResultFormatKV(-5, "", "= ", KV("name", "file"+string([]byte{0x9b})+"31m"))
+	if want := `name = "file\x9b31m"`; got != want {
+		t.Errorf("ResultFormatKV() = %q, want %q", got, want)
+	}
+	if !utf8.ValidString(got) {
+		t.Errorf("ResultFormatKV() = %q, want valid UTF-8", got)
 	}
 }
 
@@ -123,13 +105,7 @@ func TestEscapeJSONControls(t *testing.T) {
 }
 
 func TestResultFormatKVRendersLargeNumbersLiterally(t *testing.T) {
-	got := ResultFormatKV(
-		struct {
-			Big int64 `json:"big"`
-		}{Big: 1000000},
-		-4, "", "= ", "",
-		"big",
-	)
+	got := ResultFormatKV(-4, "", "= ", KV("big", int64(1000000)))
 	if want := "big = 1000000"; got != want {
 		t.Errorf("ResultFormatKV() = %q, want %q", got, want)
 	}
