@@ -32,15 +32,24 @@ func keyAttr(key string, pk ssh.PublicKey) slog.Attr {
 	)
 }
 
+// entryAttr defers fingerprinting until a log handler needs the entry.
 func entryAttr(key string, ent *allowedsigners.Entry) slog.Attr {
-	return slog.Group(key,
-		"line", ent.Line,
-		"principal", ent.Principal,
-		"type", ent.KeyType,
-		"fingerprint", ssh.FingerprintSHA256(ent.PublicKey),
-		"namespaces", strings.Join(ent.Options.Namespaces, ","),
-		"valid_after", timeText(ent.Options.ValidAfter),
-		"valid_before", timeText(ent.Options.ValidBefore),
+	return slog.Any(key, entryValue{ent: ent})
+}
+
+type entryValue struct {
+	ent *allowedsigners.Entry
+}
+
+func (v entryValue) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.Int("line", v.ent.Line),
+		slog.String("principal", v.ent.Principal),
+		slog.String("type", v.ent.KeyType),
+		slog.String("fingerprint", ssh.FingerprintSHA256(v.ent.PublicKey)),
+		slog.String("namespaces", strings.Join(v.ent.Options.Namespaces, ",")),
+		slog.String("valid_after", timeText(v.ent.Options.ValidAfter)),
+		slog.String("valid_before", timeText(v.ent.Options.ValidBefore)),
 	)
 }
 
