@@ -32,7 +32,7 @@ func (c *InspectCommand) Command() (any, []error) {
 		f, err := os.Open(c.signatureFile)
 		if err != nil {
 			return nil, []error{
-				fmt.Errorf("failed to open signature file %q: %v",
+				fmt.Errorf("failed to open signature file %q: %w",
 					c.signatureFile, helper.MarshalOSError(err),
 				),
 			}

@@ -60,7 +60,7 @@ func Sign(opts *SignOpts) (*SignResult, []error) {
 	}
 	// Check certificate validity before asking the agent to sign.
 	if err := sshsig.CertificateValidAt(pk, time.Now()); err != nil {
-		return nil, append(errs, fmt.Errorf("signing key %v", err))
+		return nil, append(errs, fmt.Errorf("signing key %w", err))
 	}
 	cli.Debug(opts.Log, cli.LevelDebug1, "sign: signing",
 		"namespace", opts.Namespace, keyAttr("key", pk),

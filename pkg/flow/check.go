@@ -68,7 +68,7 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	if !opts.NoAuthKey {
 		pk, err = sshsig.ParsePublicKeyLine(opts.AuthKey)
 		if err != nil {
-			return nil, append(errs, fmt.Errorf("invalid authentication key: %v", err))
+			return nil, append(errs, fmt.Errorf("invalid authentication key: %w", err))
 		}
 		cli.Debug(opts.Log, cli.LevelDebug2, "check: expecting", keyAttr("key", pk))
 	}
@@ -100,7 +100,7 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		}
 		if err := sshsig.CertificateValidAt(sig.PublicKey, timestamp); err != nil {
 			res.Authentication = "invalid"
-			errs = append(errs, fmt.Errorf("signature %v", err))
+			errs = append(errs, fmt.Errorf("signature %w", err))
 		}
 	}
 
@@ -120,7 +120,7 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		res.Verification = "valid"
 	case sshsig.IsReadError(err):
 		// A read failure leaves verification undecided.
-		return nil, append(errs, fmt.Errorf("failed reading data to verify: %v", err))
+		return nil, append(errs, fmt.Errorf("failed reading data to verify: %w", err))
 	default:
 		res.Verification = "invalid"
 		errs = append(errs, err)

@@ -56,12 +56,12 @@ func ParsePublicKeyLine(pkLine string) (ssh.PublicKey, error) {
 func ParsePublicKey(pkEnc string) (ssh.PublicKey, error) {
 	pkDec, err := base64.StdEncoding.DecodeString(pkEnc)
 	if err != nil {
-		return nil, fmt.Errorf("failed decoding %s: %v", QuoteToken(pkEnc), err)
+		return nil, fmt.Errorf("failed decoding %s: %w", QuoteToken(pkEnc), err)
 	}
 
 	pk, err := ssh.ParsePublicKey(pkDec)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing pubkey %s: %v", QuoteToken(pkEnc), err)
+		return nil, fmt.Errorf("failed parsing pubkey %s: %w", QuoteToken(pkEnc), err)
 	}
 	return pk, nil
 }

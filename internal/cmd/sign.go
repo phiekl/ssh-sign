@@ -31,7 +31,7 @@ func (c *SignCommand) Command() (any, []error) {
 
 	pk, err := sshsig.ParsePublicKeyLine(c.signKey)
 	if err != nil {
-		return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %v", err))}
+		return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %w", err))}
 	}
 
 	if c.dataFile == "" {
@@ -40,7 +40,7 @@ func (c *SignCommand) Command() (any, []error) {
 		f, err := os.Open(c.dataFile)
 		if err != nil {
 			return nil, []error{
-				fmt.Errorf("failed to open data file %q: %v",
+				fmt.Errorf("failed to open data file %q: %w",
 					c.dataFile, helper.MarshalOSError(err),
 				),
 			}
@@ -54,7 +54,7 @@ func (c *SignCommand) Command() (any, []error) {
 	// hand back the socket after signing does not invalidate the signature.
 	conn, agent, err := sshsig.ConnectAgent(log)
 	if err != nil {
-		return nil, []error{fmt.Errorf("failed agent connection: %v", err)}
+		return nil, []error{fmt.Errorf("failed agent connection: %w", err)}
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -64,7 +64,7 @@ func (c *SignCommand) Command() (any, []error) {
 
 	signer, err := sshsig.AgentSigner(log, conn, agent, pk)
 	if err != nil {
-		return nil, []error{fmt.Errorf("agent: %v", err)}
+		return nil, []error{fmt.Errorf("agent: %w", err)}
 	}
 	c.commandOpts.Signer = signer
 

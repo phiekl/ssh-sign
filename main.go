@@ -101,7 +101,7 @@ func main() {
 		}
 		out = cli.EscapeJSONControls(out)
 		if err := writeOutput(os.Stdout, string(out)); err != nil {
-			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
+			die(opts.CommandName, fmt.Errorf("failed writing output: %w", err))
 		}
 		if len(res.Error) > 0 {
 			os.Exit(1)
@@ -114,7 +114,7 @@ func main() {
 	}
 	if res.Data != nil {
 		if err := writeOutput(os.Stdout, fmt.Sprint(res.Data)); err != nil {
-			die(opts.CommandName, fmt.Errorf("failed writing output: %v", err))
+			die(opts.CommandName, fmt.Errorf("failed writing output: %w", err))
 		}
 	}
 	os.Exit(0)

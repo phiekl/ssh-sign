@@ -77,7 +77,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 
 	parsed, err := allowedsigners.Parse(opts.AllowedSignersFile)
 	if err != nil {
-		return nil, []error{fmt.Errorf("failed parsing allowed signers file: %v", err)}
+		return nil, []error{fmt.Errorf("failed parsing allowed signers file: %w", err)}
 	}
 	cli.Debug(opts.Log, cli.LevelDebug2, "verify: parsed allowed signers",
 		"entries", len(parsed.Entries), "skipped", parsed.SkippedCount,
@@ -171,12 +171,12 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	case err != nil && opts.Principal == "":
 		res.Authentication = "invalid"
 		errs = append(errs, fmt.Errorf(
-			"signer public key found in allowed signers, but failed constraints: %v", err,
+			"signer public key found in allowed signers, but failed constraints: %w", err,
 		))
 	case err != nil:
 		res.Authentication = "invalid"
 		errs = append(errs, fmt.Errorf(
-			"principal %q found in allowed signers, but failed constraints: %v",
+			"principal %q found in allowed signers, but failed constraints: %w",
 			opts.Principal, err,
 		))
 	case ent == nil && opts.Principal == "":
@@ -200,7 +200,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	// Enforce the certificate's own validity window too.
 	if err := sshsig.CertificateValidAt(sig.PublicKey, timestamp); err != nil {
 		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf("signature %v", err))
+		errs = append(errs, fmt.Errorf("signature %w", err))
 	}
 
 	switch err := sshsig.SignatureVerify(opts.VerifyFile, sig); {
@@ -208,7 +208,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		res.Verification = "valid"
 	case sshsig.IsReadError(err):
 		// A read failure leaves verification undecided.
-		return nil, append(errs, fmt.Errorf("failed reading data to verify: %v", err))
+		return nil, append(errs, fmt.Errorf("failed reading data to verify: %w", err))
 	default:
 		res.Verification = "invalid"
 		errs = append(errs, err)

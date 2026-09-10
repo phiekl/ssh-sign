@@ -88,7 +88,7 @@ func signatureRead(in io.Reader, max int64) (*Signature, error) {
 
 	sig, err := ParseSignature(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("unarmoring data failed: %v", boundedError(err))
+		return nil, fmt.Errorf("unarmoring data failed: %w", boundedError(err))
 	}
 	if err := validateSignatureAlgorithm(sig); err != nil {
 		return nil, err

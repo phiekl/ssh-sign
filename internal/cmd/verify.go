@@ -34,7 +34,7 @@ func (c *VerifyCommand) Command() (any, []error) {
 		ts, err := helper.ParseTimestamp(c.timestamp)
 		if err != nil {
 			return nil, []error{
-				cli.MarkUsage(fmt.Errorf("invalid timestamp %q: %v", c.timestamp, err)),
+				cli.MarkUsage(fmt.Errorf("invalid timestamp %q: %w", c.timestamp, err)),
 			}
 		}
 		c.commandOpts.Timestamp = ts
@@ -43,7 +43,7 @@ func (c *VerifyCommand) Command() (any, []error) {
 	allowedSignersFile, err := os.Open(c.allowedSignersFile)
 	if err != nil {
 		return nil, []error{
-			fmt.Errorf("failed to open allowed signers file %q: %v",
+			fmt.Errorf("failed to open allowed signers file %q: %w",
 				c.allowedSignersFile, helper.MarshalOSError(err),
 			),
 		}
@@ -57,7 +57,7 @@ func (c *VerifyCommand) Command() (any, []error) {
 		signatureFile, err := os.Open(c.signatureFile)
 		if err != nil {
 			return nil, []error{
-				fmt.Errorf("failed to open signature file %q: %v",
+				fmt.Errorf("failed to open signature file %q: %w",
 					c.signatureFile, helper.MarshalOSError(err),
 				),
 			}
@@ -69,7 +69,7 @@ func (c *VerifyCommand) Command() (any, []error) {
 	verifyFile, err := os.Open(c.verifyFile)
 	if err != nil {
 		return nil, []error{
-			fmt.Errorf("failed to open verify file %q: %v",
+			fmt.Errorf("failed to open verify file %q: %w",
 				c.verifyFile, helper.MarshalOSError(err),
 			),
 		}

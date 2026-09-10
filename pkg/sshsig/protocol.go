@@ -197,7 +197,7 @@ func ParseSignature(blob []byte) (*Signature, error) {
 	var wire signatureWire
 	// Unmarshal also rejects anything trailing the signature.
 	if err := ssh.Unmarshal(blob, &wire); err != nil {
-		return nil, fmt.Errorf("invalid signature: %v", boundedError(err))
+		return nil, fmt.Errorf("invalid signature: %w", boundedError(err))
 	}
 	if preamble := string(wire.MagicPreamble[:]); preamble != magicPreamble {
 		return nil, fmt.Errorf(
@@ -206,11 +206,11 @@ func ParseSignature(blob []byte) (*Signature, error) {
 	}
 	pk, err := ssh.ParsePublicKey([]byte(wire.PublicKey))
 	if err != nil {
-		return nil, fmt.Errorf("invalid public key: %v", boundedError(err))
+		return nil, fmt.Errorf("invalid public key: %w", boundedError(err))
 	}
 	var sshSig ssh.Signature
 	if err := ssh.Unmarshal([]byte(wire.Signature), &sshSig); err != nil {
-		return nil, fmt.Errorf("invalid signature field: %v", boundedError(err))
+		return nil, fmt.Errorf("invalid signature field: %w", boundedError(err))
 	}
 
 	sig := &Signature{

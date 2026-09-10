@@ -59,7 +59,7 @@ func asCertificate(pk ssh.PublicKey) (*ssh.Certificate, error) {
 	}
 	parsed, err := ssh.ParsePublicKey(pk.Marshal())
 	if err != nil {
-		return nil, fmt.Errorf("certificate is unparseable: %v", boundedError(err))
+		return nil, fmt.Errorf("certificate is unparseable: %w", boundedError(err))
 	}
 	cert, ok := parsed.(*ssh.Certificate)
 	if !ok {

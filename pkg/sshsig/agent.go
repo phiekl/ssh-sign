@@ -29,7 +29,7 @@ func ConnectAgent(log *slog.Logger) (net.Conn, agent.Agent, error) {
 
 	conn, err := net.DialTimeout("unix", sock, agentTimeout)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to %q: %v", sock, err)
+		return nil, nil, fmt.Errorf("failed to connect to %q: %w", sock, err)
 	}
 	debug(log, levelDebug1, "agent: connected", "socket", sock)
 
@@ -51,7 +51,7 @@ func agentSigner(
 	if conn != nil {
 		deadline = time.Now().Add(timeout)
 		if err := conn.SetDeadline(deadline); err != nil {
-			return nil, fmt.Errorf("failed setting agent deadline: %v", err)
+			return nil, fmt.Errorf("failed setting agent deadline: %w", err)
 		}
 		defer func() { _ = conn.SetDeadline(time.Time{}) }()
 	}
@@ -63,7 +63,7 @@ func agentSigner(
 		if !deadline.IsZero() && !time.Now().Before(deadline) {
 			return nil, fmt.Errorf("no reply while listing keys within %s", timeout)
 		}
-		return nil, fmt.Errorf("failed listing keys: %v", err)
+		return nil, fmt.Errorf("failed listing keys: %w", err)
 	}
 	debug(log, levelDebug2, "agent: listed keys", "keys", len(signers))
 	for i, s := range signers {
@@ -88,7 +88,7 @@ func agentSigner(
 			}
 			certSigner, err := ssh.NewCertSigner(cert, s)
 			if err != nil {
-				return nil, fmt.Errorf("failed constructing RSA certificate signer: %v", err)
+				return nil, fmt.Errorf("failed constructing RSA certificate signer: %w", err)
 			}
 			debug(log, levelDebug1, "agent: matched certificate key",
 				"type", cert.Type(), "fingerprint", ssh.FingerprintSHA256(cert.Key),

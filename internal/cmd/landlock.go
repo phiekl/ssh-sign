@@ -14,7 +14,7 @@ import (
 // restrict must run after opening every command input.
 func restrict(log *slog.Logger) error {
 	if err := landlock.Restrict(log); err != nil {
-		return fmt.Errorf("failed enabling landlock: %v", err)
+		return fmt.Errorf("failed enabling landlock: %w", err)
 	}
 	return nil
 }

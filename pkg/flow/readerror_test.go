@@ -9,6 +9,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 // failingReader returns the supplied error on every read.
@@ -89,5 +91,34 @@ func TestVerifyReportsAnEmptyFileAsAVerdict(t *testing.T) {
 	}
 	if res.Verification != "invalid" {
 		t.Errorf("Verification = %q, want %q", res.Verification, "invalid")
+	}
+}
+
+// Callers must be able to inspect wrapped error types and causes.
+func TestReadFailuresRemainInspectableByCallers(t *testing.T) {
+	s := sign(t, "git")
+	wantErr := errors.New("is a directory")
+
+	opts := s.verifyOpts("alice@example.com "+s.keyLine+"\n", "git")
+	opts.VerifyFile = failingReader{err: wantErr}
+	_, verifyErrs := Verify(opts)
+
+	_, checkErrs := Check(&CheckOpts{
+		NoAuthKey:     true,
+		Namespace:     "git",
+		SignatureFile: strings.NewReader(s.armored),
+		VerifyFile:    failingReader{err: wantErr},
+	})
+
+	for name, errs := range map[string][]error{"Verify": verifyErrs, "Check": checkErrs} {
+		t.Run(name, func(t *testing.T) {
+			err := errors.Join(errs...)
+			if !sshsig.IsReadError(err) {
+				t.Errorf("%s() errors = %v, want a reachable *sshsig.ReadError", name, errs)
+			}
+			if !errors.Is(err, wantErr) {
+				t.Errorf("%s() errors = %v, want the underlying cause reachable", name, errs)
+			}
+		})
 	}
 }

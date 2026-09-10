@@ -47,7 +47,7 @@ func kernelABI() (int, error) {
 		errors.Is(err, syscall.EPERM) {
 		return 0, errUnsupported
 	}
-	return 0, fmt.Errorf("failed querying the ABI version: %v", err)
+	return 0, fmt.Errorf("failed querying the ABI version: %w", err)
 }
 
 type abiStatus struct {

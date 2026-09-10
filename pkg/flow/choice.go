@@ -30,7 +30,7 @@ func CheckAuthKey(authKey string, noAuthKey bool) error {
 
 	if authKey != "" {
 		if _, err := sshsig.ParsePublicKeyLine(authKey); err != nil {
-			return fmt.Errorf("invalid authentication key: %v", err)
+			return fmt.Errorf("invalid authentication key: %w", err)
 		}
 	}
 	return nil
