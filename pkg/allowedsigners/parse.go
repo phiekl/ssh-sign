@@ -92,7 +92,7 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 		return nil, &ParseError{Line: n, Msg: "missing type/key fields"}
 	}
 
-	e := &Entry{Line: n, Raw: line}
+	e := &Entry{Line: n}
 
 	e.Principal, err = unquotePrincipals(strings.TrimSpace(fields[0]))
 	if err != nil {

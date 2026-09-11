@@ -310,11 +310,6 @@ func TestNewSignatureInfo(t *testing.T) {
 	if info.Signature.Format != "ssh-ed25519" {
 		t.Errorf("Signature.Format = %q, want %q", info.Signature.Format, "ssh-ed25519")
 	}
-	// Empty for a plain key. A security-key signature would carry its FIDO
-	// flags and counter here, which is why the field is kept.
-	if info.Signature.Rest != "" {
-		t.Errorf("Signature.Rest = %q, want empty for an ed25519 signature", info.Signature.Rest)
-	}
 	if info.PublicKey.Fingerprint != ssh.FingerprintSHA256(signer.PublicKey()) {
 		t.Errorf("PublicKey.Fingerprint = %q, want the signer's", info.PublicKey.Fingerprint)
 	}

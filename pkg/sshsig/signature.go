@@ -178,7 +178,6 @@ func SignatureVerify(in io.Reader, sig *Signature) error {
 type SignatureDataInfo struct {
 	Format string `json:"format"`
 	Blob   string `json:"blob"`
-	Rest   string `json:"-"`
 }
 
 // NewSignatureDataInfo populates a new SignatureDataInfo.
@@ -186,7 +185,6 @@ func NewSignatureDataInfo(sig *ssh.Signature) SignatureDataInfo {
 	return SignatureDataInfo{
 		Format: string(sig.Format),
 		Blob:   base64.StdEncoding.EncodeToString(sig.Blob),
-		Rest:   base64.StdEncoding.EncodeToString(sig.Rest),
 	}
 }
 

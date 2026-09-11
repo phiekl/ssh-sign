@@ -25,8 +25,6 @@ type File struct {
 type Entry struct {
 	// File line number.
 	Line int
-	// Line content (whitespace/newline trimmed).
-	Raw string
 
 	// Principals is the pattern-list for identities (USER@DOMAIN patterns).
 	Principal string
