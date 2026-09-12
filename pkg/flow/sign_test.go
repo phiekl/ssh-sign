@@ -55,13 +55,13 @@ func TestSign(t *testing.T) {
 	signer := testSigner(t)
 	keyLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
 
-	res, errs := Sign(&SignOpts{
+	res, err := Sign(&SignOpts{
 		DataFile:  strings.NewReader(testData),
 		Namespace: "git",
 		Signer:    signer,
 	})
-	if len(errs) != 0 {
-		t.Fatalf("Sign() errors = %v, want none", errs)
+	if err != nil {
+		t.Fatalf("Sign() error = %v, want nil", err)
 	}
 
 	// The signature it produced must verify against the key that made it.
@@ -94,9 +94,9 @@ func TestSignRejectsMissingData(t *testing.T) {
 				}
 			}()
 			opts := &SignOpts{DataFile: missing, Namespace: "git", Signer: signer}
-			if _, errs := Sign(opts); len(errs) == 0 ||
-				!strings.Contains(errorText(errs), "data file is required") {
-				t.Errorf("Sign() errors = %v, want a missing-input error", errs)
+			if _, err := Sign(opts); err == nil ||
+				!strings.Contains(err.Error(), "data file is required") {
+				t.Errorf("Sign() error = %v, want a missing-input error", err)
 			}
 		})
 	}
@@ -111,13 +111,13 @@ func TestSignRejectsMissingSigner(t *testing.T) {
 					t.Fatalf("panicked on a missing signer: %v", r)
 				}
 			}()
-			_, errs := Sign(&SignOpts{
+			_, err := Sign(&SignOpts{
 				DataFile:  strings.NewReader(testData),
 				Namespace: "git",
 				Signer:    signer,
 			})
-			if !strings.Contains(errorText(errs), "signer is required") {
-				t.Errorf("Sign() errors = %v, want a missing-signer error", errs)
+			if err == nil || !strings.Contains(err.Error(), "signer is required") {
+				t.Errorf("Sign() error = %v, want a missing-signer error", err)
 			}
 		})
 	}
@@ -132,13 +132,13 @@ func TestSignRejectsSignerWithoutPublicKey(t *testing.T) {
 					t.Fatalf("panicked on a signer without a public key: %v", r)
 				}
 			}()
-			_, errs := Sign(&SignOpts{
+			_, err := Sign(&SignOpts{
 				DataFile:  strings.NewReader(testData),
 				Namespace: "git",
 				Signer:    nilPublicKeySigner{publicKey: publicKey},
 			})
-			if !strings.Contains(errorText(errs), "signer public key is required") {
-				t.Errorf("Sign() errors = %v, want a missing-public-key error", errs)
+			if err == nil || !strings.Contains(err.Error(), "signer public key is required") {
+				t.Errorf("Sign() error = %v, want a missing-public-key error", err)
 			}
 		})
 	}

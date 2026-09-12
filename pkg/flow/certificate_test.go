@@ -238,12 +238,12 @@ func TestSignRejectsAnExpiredCertificate(t *testing.T) {
 		t.Fatalf("creating certificate signer: %v", err)
 	}
 
-	_, errs := Sign(&SignOpts{
+	_, err = Sign(&SignOpts{
 		DataFile:  strings.NewReader(testData),
 		Namespace: "git",
 		Signer:    certSigner,
 	})
-	if !strings.Contains(errorText(errs), "signing key certificate expired") {
-		t.Fatalf("Sign() errors = %v, want the expired certificate refused", errs)
+	if err == nil || !strings.Contains(err.Error(), "signing key certificate expired") {
+		t.Fatalf("Sign() error = %v, want the expired certificate refused", err)
 	}
 }

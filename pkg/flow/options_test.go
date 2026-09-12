@@ -12,8 +12,8 @@ import (
 func TestFlowsRejectNilOptions(t *testing.T) {
 	tests := map[string]func() (bool, []error){
 		"sign": func() (bool, []error) {
-			result, errs := Sign(nil)
-			return result == nil, errs
+			result, err := Sign(nil)
+			return result == nil, []error{err}
 		},
 		"check": func() (bool, []error) {
 			result, errs := Check(nil)
@@ -24,8 +24,8 @@ func TestFlowsRejectNilOptions(t *testing.T) {
 			return result == nil, errs
 		},
 		"inspect": func() (bool, []error) {
-			result, errs := Inspect(nil)
-			return result == nil, errs
+			result, err := Inspect(nil)
+			return result == nil, []error{err}
 		},
 	}
 

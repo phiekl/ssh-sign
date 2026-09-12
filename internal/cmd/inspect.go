@@ -45,7 +45,11 @@ func (c *InspectCommand) Command() (any, []error) {
 	if err := restrict(log); err != nil {
 		return nil, []error{err}
 	}
-	return flow.Inspect(&c.commandOpts)
+	res, err := flow.Inspect(&c.commandOpts)
+	if err != nil {
+		return nil, []error{err}
+	}
+	return res, nil
 }
 
 func (c *InspectCommand) Args() {

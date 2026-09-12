@@ -68,7 +68,11 @@ func (c *SignCommand) Command() (any, []error) {
 	}
 	c.commandOpts.Signer = signer
 
-	return flow.Sign(&c.commandOpts)
+	res, err := flow.Sign(&c.commandOpts)
+	if err != nil {
+		return nil, []error{err}
+	}
+	return res, nil
 }
 
 func (c *SignCommand) Args() {

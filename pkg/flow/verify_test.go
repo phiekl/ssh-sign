@@ -297,9 +297,9 @@ func TestVerifyHonoursTheValidityWindow(t *testing.T) {
 func TestInspectReportsSignatureDetails(t *testing.T) {
 	s := sign(t, "git")
 
-	res, errs := Inspect(&InspectOpts{SignatureFile: strings.NewReader(s.armored)})
-	if len(errs) != 0 {
-		t.Fatalf("Inspect() errors = %v, want none", errs)
+	res, err := Inspect(&InspectOpts{SignatureFile: strings.NewReader(s.armored)})
+	if err != nil {
+		t.Fatalf("Inspect() error = %v, want nil", err)
 	}
 	if res.Namespace != "git" {
 		t.Errorf("Namespace = %q, want %q", res.Namespace, "git")
@@ -417,8 +417,8 @@ func TestFlowsRejectMissingReaders(t *testing.T) {
 		})
 		t.Run(kind+" inspect signature", func(t *testing.T) {
 			assertMissingReader(t, func() []error {
-				_, errs := Inspect(&InspectOpts{SignatureFile: missing})
-				return errs
+				_, err := Inspect(&InspectOpts{SignatureFile: missing})
+				return []error{err}
 			})
 		})
 	}

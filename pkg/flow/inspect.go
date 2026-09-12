@@ -35,22 +35,21 @@ func (r InspectResult) String() string {
 	)
 }
 
-func Inspect(opts *InspectOpts) (*InspectResult, []error) {
-	var errs []error
+func Inspect(opts *InspectOpts) (*InspectResult, error) {
 	if opts == nil {
-		return nil, []error{fmt.Errorf("options are required")}
+		return nil, fmt.Errorf("options are required")
 	}
 
 	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
-		return nil, append(errs, err)
+		return nil, err
 	}
 
 	sig, err := sshsig.SignatureRead(opts.SignatureFile)
 	if err != nil {
-		return nil, append(errs, err)
+		return nil, err
 	}
 	debugSignature(opts.Log, "inspect", sig)
 
 	res := InspectResult{sshsig.NewSignatureInfo(sig)}
-	return &res, errs
+	return &res, nil
 }
