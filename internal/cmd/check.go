@@ -66,7 +66,7 @@ func (c *CheckCommand) Command() (any, []error) {
 		if err != nil {
 			return nil, []error{
 				fmt.Errorf("failed to open signature file %q: %w",
-					c.signatureFile, helper.MarshalOSError(err),
+					c.signatureFile, helper.UnwrapPathError(err),
 				),
 			}
 		}
@@ -78,7 +78,7 @@ func (c *CheckCommand) Command() (any, []error) {
 	if err != nil {
 		return nil, []error{
 			fmt.Errorf("failed to open verify file %q: %w",
-				c.verifyFile, helper.MarshalOSError(err),
+				c.verifyFile, helper.UnwrapPathError(err),
 			),
 		}
 	}

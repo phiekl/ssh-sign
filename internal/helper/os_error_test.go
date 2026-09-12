@@ -13,43 +13,43 @@ import (
 	"testing"
 )
 
-func TestMarshalOSErrorDropsThePathPrefix(t *testing.T) {
+func TestUnwrapPathErrorDropsThePathPrefix(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	_, err := os.Open(missing)
 	if err == nil {
 		t.Fatal("opening a missing file unexpectedly succeeded")
 	}
 
-	got := MarshalOSError(err)
+	got := UnwrapPathError(err)
 	if want := "no such file or directory"; got.Error() != want {
-		t.Errorf("MarshalOSError() = %q, want %q", got, want)
+		t.Errorf("UnwrapPathError() = %q, want %q", got, want)
 	}
 	// The cause is preserved, so callers can still match on it.
 	if !errors.Is(got, fs.ErrNotExist) {
-		t.Errorf("MarshalOSError() = %v, want it to still match fs.ErrNotExist", got)
+		t.Errorf("UnwrapPathError() = %v, want it to still match fs.ErrNotExist", got)
 	}
 }
 
-func TestMarshalOSErrorPassesOtherErrorsThrough(t *testing.T) {
-	if got := MarshalOSError(nil); got != nil {
-		t.Errorf("MarshalOSError(nil) = %v, want nil", got)
+func TestUnwrapPathErrorPassesOtherErrorsThrough(t *testing.T) {
+	if got := UnwrapPathError(nil); got != nil {
+		t.Errorf("UnwrapPathError(nil) = %v, want nil", got)
 	}
 
 	plain := errors.New("something else")
-	if got := MarshalOSError(plain); got != plain {
-		t.Errorf("MarshalOSError() = %v, want the error unchanged", got)
+	if got := UnwrapPathError(plain); got != plain {
+		t.Errorf("UnwrapPathError() = %v, want the error unchanged", got)
 	}
 }
 
-func TestMarshalOSErrorUnwrapsAWrappedPathError(t *testing.T) {
+func TestUnwrapPathErrorUnwrapsAWrappedPathError(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	_, err := os.Open(missing)
 	if err == nil {
 		t.Fatal("opening a missing file unexpectedly succeeded")
 	}
 
-	got := MarshalOSError(fmt.Errorf("reading config: %w", err))
+	got := UnwrapPathError(fmt.Errorf("reading config: %w", err))
 	if want := "no such file or directory"; got.Error() != want {
-		t.Errorf("MarshalOSError() = %q, want %q", got, want)
+		t.Errorf("UnwrapPathError() = %q, want %q", got, want)
 	}
 }

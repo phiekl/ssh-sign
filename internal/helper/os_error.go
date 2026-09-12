@@ -9,8 +9,8 @@ import (
 	"os"
 )
 
-// MarshalOSError reduces a *os.PathError to its underlying cause.
-func MarshalOSError(err error) error {
+// UnwrapPathError reduces a *os.PathError to its underlying cause.
+func UnwrapPathError(err error) error {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) {
 		return pathErr.Err

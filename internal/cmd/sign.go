@@ -41,7 +41,7 @@ func (c *SignCommand) Command() (any, []error) {
 		if err != nil {
 			return nil, []error{
 				fmt.Errorf("failed to open data file %q: %w",
-					c.dataFile, helper.MarshalOSError(err),
+					c.dataFile, helper.UnwrapPathError(err),
 				),
 			}
 		}
