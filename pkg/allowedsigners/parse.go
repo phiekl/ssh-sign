@@ -184,7 +184,7 @@ func parseOptions(s string) (Options, error) {
 			if o.ValidAfter != nil {
 				return o, fmt.Errorf("multiple %q clauses", key)
 			}
-			t, err := ParseTimestamp(val)
+			t, err := ParseKeygenTimestamp(val)
 			if err != nil {
 				return o, fmt.Errorf("valid-after: %w", err)
 			}
@@ -193,7 +193,7 @@ func parseOptions(s string) (Options, error) {
 			if o.ValidBefore != nil {
 				return o, fmt.Errorf("multiple %q clauses", key)
 			}
-			t, err := ParseTimestamp(val)
+			t, err := ParseKeygenTimestamp(val)
 			if err != nil {
 				return o, fmt.Errorf("valid-before: %w", err)
 			}

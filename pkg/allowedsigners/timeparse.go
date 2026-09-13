@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-// ParseAllowedSignersTimestamp parses timestamps in the formats documented by ssh-keygen:
+// ParseKeygenTimestamp parses timestamps in the formats documented by ssh-keygen:
 //
 // YYYYMMDD[Z]
 // YYYYMMDDHHMM[SS][Z]
 //
 // Without Z => interpreted in local time zone, with Z => UTC.
-func ParseTimestamp(s string) (time.Time, error) {
+func ParseKeygenTimestamp(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}, fmt.Errorf("empty timestamp")
