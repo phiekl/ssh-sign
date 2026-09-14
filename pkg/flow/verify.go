@@ -45,8 +45,6 @@ func (r VerifyResult) String() string {
 }
 
 func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
-	var errs []error
-	var err error
 	if opts == nil {
 		return nil, []error{fmt.Errorf("options are required")}
 	}
@@ -77,22 +75,9 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		"timestamp", timestamp.Format(time.RFC3339),
 	)
 
-	parsed, err := allowedsigners.Parse(opts.AllowedSignersFile)
+	parsed, err := parseAllowedSigners(opts.Log, opts.AllowedSignersFile)
 	if err != nil {
-		return nil, []error{fmt.Errorf("failed parsing allowed signers file: %w", err)}
-	}
-	cli.Debug(opts.Log, cli.LevelDebug2, "verify: parsed allowed signers",
-		"entries", len(parsed.Entries), "skipped", parsed.SkippedCount,
-	)
-	for i := range parsed.Skipped {
-		cli.Debug(opts.Log, cli.LevelDebug1, "verify: skipped allowed signers line",
-			"line", parsed.Skipped[i].Line, "reason", parsed.Skipped[i].Msg,
-		)
-	}
-	for i := range parsed.Entries {
-		cli.Debug(opts.Log, cli.LevelDebug3, "verify: allowed signers entry",
-			entryAttr("entry", &parsed.Entries[i]),
-		)
+		return nil, []error{err}
 	}
 
 	sig, err := sshsig.SignatureRead(opts.SignatureFile)
@@ -101,23 +86,75 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	}
 	debugSignature(opts.Log, "verify", sig)
 
-	// Run all checks and retain the requested principal on failure.
-	res := VerifyResult{Namespace: sig.Namespace, Principal: opts.Principal}
+	// Run every check rather than stopping at the first failure.
+	res := VerifyResult{Namespace: sig.Namespace}
+	var errs []error
 
-	// Without an explicit namespace, allowed signers supplies the namespace policy.
-	if opts.Namespace == "" {
-		res.Designation = "disabled"
-	} else if opts.Namespace == sig.Namespace {
-		res.Designation = "valid"
-	} else {
-		res.Designation = "invalid"
-		errs = append(errs, fmt.Errorf(
-			"signature contains namespace %q (expected %q)", sig.Namespace, opts.Namespace,
-		))
+	ent, restricted, matchErr := matchSigner(opts, parsed, sig, timestamp)
+
+	res.Designation, err = resolveDesignation(opts, sig, ent, restricted, matchErr)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
-	var ent *allowedsigners.Entry
-	var restricted bool
+	res.Authentication, res.Principal, err = resolveAuthentication(opts, ent, matchErr)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	// Enforce the certificate's own validity window too.
+	if err := sshsig.CertificateValidAt(sig.PublicKey, timestamp); err != nil {
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf("signature %w", err))
+	}
+
+	switch err := sshsig.SignatureVerify(opts.VerifyFile, sig); {
+	case err == nil:
+		res.Verification = "valid"
+	case sshsig.IsReadError(err):
+		// A read failure leaves verification undecided.
+		return nil, append(errs, fmt.Errorf("failed reading data to verify: %w", err))
+	default:
+		res.Verification = "invalid"
+		errs = append(errs, err)
+	}
+	cli.Debug(opts.Log, cli.LevelDebug1, "verify: verified",
+		"authentication", res.Authentication,
+		"designation", res.Designation,
+		"verification", res.Verification,
+	)
+
+	return &res, errs
+}
+
+// parseAllowedSigners parses the file and logs entries and errors.
+func parseAllowedSigners(log *slog.Logger, r io.Reader) (*allowedsigners.File, error) {
+	parsed, err := allowedsigners.Parse(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing allowed signers file: %w", err)
+	}
+	cli.Debug(log, cli.LevelDebug2, "verify: parsed allowed signers",
+		"entries", len(parsed.Entries), "skipped", parsed.SkippedCount,
+	)
+	for i := range parsed.Skipped {
+		cli.Debug(log, cli.LevelDebug1, "verify: skipped allowed signers line",
+			"line", parsed.Skipped[i].Line, "reason", parsed.Skipped[i].Msg,
+		)
+	}
+	for i := range parsed.Entries {
+		cli.Debug(log, cli.LevelDebug3, "verify: allowed signers entry",
+			entryAttr("entry", &parsed.Entries[i]),
+		)
+	}
+	return parsed, nil
+}
+
+// matchSigner finds an entry matching the key and requested policy.
+// restricted reports whether the selected entry limits namespaces.
+func matchSigner(
+	opts *VerifyOpts, parsed *allowedsigners.File,
+	sig *sshsig.Signature, timestamp time.Time,
+) (ent *allowedsigners.Entry, restricted bool, err error) {
 	switch {
 	case opts.NoNamespace:
 		ent, err = parsed.MatchEntryIgnoringNamespace(
@@ -146,80 +183,72 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			"namespace_restricted", restricted,
 		)
 	}
-	// Only an accepted entry can validate an inferred namespace.
-	if opts.Namespace == "" && !opts.NoNamespace {
+	return ent, restricted, err
+}
+
+// resolveDesignation checks the namespace against the options and matched entry.
+func resolveDesignation(
+	opts *VerifyOpts, sig *sshsig.Signature,
+	ent *allowedsigners.Entry, restricted bool, matchErr error,
+) (string, error) {
+	switch {
+	case opts.NoNamespace:
+		return "disabled", nil
+	case opts.Namespace == "":
+		// Only an accepted entry can validate an inferred namespace.
 		switch {
 		case ent == nil:
-			res.Designation = "invalid"
+			// Authentication reports why nothing matched.
+			return "invalid", nil
 		case restricted:
-			res.Designation = "valid"
-		default:
-			res.Designation = "invalid"
-			errs = append(errs, fmt.Errorf(
-				"signature namespace %q was left unverified: no namespace was requested "+
-					"and no matching allowed signers entry restricts one "+
-					"(use -n, -N or namespaces=)",
-				sig.Namespace,
-			))
+			return "valid", nil
 		}
+		// The matched entry provides no namespace restriction.
+		return "invalid", fmt.Errorf(
+			"signature namespace %q was left unverified: no namespace was requested "+
+				"and no matching allowed signers entry restricts one "+
+				"(use -n, -N or namespaces=)",
+			sig.Namespace,
+		)
+	case opts.Namespace != sig.Namespace:
+		return "invalid", fmt.Errorf(
+			"signature contains namespace %q (expected %q)", sig.Namespace, opts.Namespace,
+		)
 	}
 	// An explicit namespace must also satisfy allowed signers.
-	if opts.Namespace != "" && !opts.NoNamespace {
-		if checked, matched := allowedsigners.NamespaceConstraintResult(err); checked && !matched {
-			res.Designation = "invalid"
-		}
+	if checked, matched := allowedsigners.NamespaceConstraintResult(matchErr); checked && !matched {
+		return "invalid", nil
 	}
+	return "valid", nil
+}
+
+// resolveAuthentication returns the signer's authentication status and identity.
+func resolveAuthentication(
+	opts *VerifyOpts, ent *allowedsigners.Entry, matchErr error,
+) (status, principal string, err error) {
 	switch {
-	case err != nil && opts.Principal == "":
-		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf(
-			"signer public key found in allowed signers, but failed constraints: %w", err,
-		))
-	case err != nil:
-		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf(
+	case matchErr != nil && opts.Principal == "":
+		return "invalid", opts.Principal, fmt.Errorf(
+			"signer public key found in allowed signers, but failed constraints: %w", matchErr,
+		)
+	case matchErr != nil:
+		return "invalid", opts.Principal, fmt.Errorf(
 			"principal %q found in allowed signers, but failed constraints: %w",
-			opts.Principal, err,
-		))
+			opts.Principal, matchErr,
+		)
 	case ent == nil && opts.Principal == "":
-		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf("signer public key not found within allowed signers"))
+		return "invalid", opts.Principal, fmt.Errorf(
+			"signer public key not found within allowed signers",
+		)
 	case ent == nil:
-		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf(
+		return "invalid", opts.Principal, fmt.Errorf(
 			"principal %q not found within allowed signers", opts.Principal,
-		))
+		)
 	case opts.Principal == "":
-		res.Authentication = "disabled"
 		// No principal was requested, so the entry's pattern-list is the most
 		// specific identity available.
-		res.Principal = ent.Principal
-	default:
-		// Report the requested identity, not the entry's pattern-list.
-		res.Authentication = "valid"
+		return "disabled", ent.Principal, nil
 	}
-
-	// Enforce the certificate's own validity window too.
-	if err := sshsig.CertificateValidAt(sig.PublicKey, timestamp); err != nil {
-		res.Authentication = "invalid"
-		errs = append(errs, fmt.Errorf("signature %w", err))
-	}
-
-	switch err := sshsig.SignatureVerify(opts.VerifyFile, sig); {
-	case err == nil:
-		res.Verification = "valid"
-	case sshsig.IsReadError(err):
-		// A read failure leaves verification undecided.
-		return nil, append(errs, fmt.Errorf("failed reading data to verify: %w", err))
-	default:
-		res.Verification = "invalid"
-		errs = append(errs, err)
-	}
-	cli.Debug(opts.Log, cli.LevelDebug1, "verify: verified",
-		"authentication", res.Authentication,
-		"designation", res.Designation,
-		"verification", res.Verification,
-	)
-
-	return &res, errs
+	// Report the requested identity, not the entry's pattern-list.
+	return "valid", opts.Principal, nil
 }
