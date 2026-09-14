@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
+// Package allowedsigners parses and matches OpenSSH allowed signers files.
+// Some validation rules are stricter than ssh-keygen's.
 package allowedsigners
 
 import (
@@ -19,6 +21,7 @@ const maxLineSize = 4 << 20
 // maxSkippedRecorded caps retained diagnostics for malformed input.
 const maxSkippedRecorded = 64
 
+// ParseError describes a malformed line that parsing skipped.
 type ParseError struct {
 	Line int
 	Msg  string

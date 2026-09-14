@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+// ParseTimestamp parses a user-supplied timestamp. It accepts RFC3339 and
+// RFC1123, and "YYYY-MM-DD[ HH:MM:SS]" in the local time zone.
 func ParseTimestamp(s string) (time.Time, error) {
 	zonedFormats := []string{
 		time.RFC3339Nano,

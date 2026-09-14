@@ -10,6 +10,7 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
+// CheckNamespace validates the namespace options.
 func CheckNamespace(namespace string, noNamespace bool) error {
 	switch {
 	case namespace != "" && noNamespace:
@@ -20,6 +21,7 @@ func CheckNamespace(namespace string, noNamespace bool) error {
 	return nil
 }
 
+// CheckAuthKey validates the authentication options and parses any given key.
 func CheckAuthKey(authKey string, noAuthKey bool) error {
 	switch {
 	case authKey != "" && noAuthKey:

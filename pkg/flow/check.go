@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
+// Package flow implements the ssh-sign commands.
 package flow
 
 import (
@@ -15,6 +16,7 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
+// CheckOpts configures Check. SignatureFile and VerifyFile are required.
 type CheckOpts struct {
 	AuthKey       string
 	Log           *slog.Logger
@@ -26,6 +28,7 @@ type CheckOpts struct {
 	VerifyFile    io.Reader
 }
 
+// CheckResult holds the results of Check.
 type CheckResult struct {
 	Authentication string `json:"authentication"`
 	Designation    string `json:"designation"`
@@ -40,6 +43,8 @@ func (r CheckResult) String() string {
 	)
 }
 
+// Check verifies a signature with optional key and namespace checks.
+// It reports all independent failures and may return a result with errors.
 func Check(opts *CheckOpts) (*CheckResult, []error) {
 	var errs []error
 	var err error

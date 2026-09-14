@@ -26,7 +26,7 @@ type Entry struct {
 	// File line number.
 	Line int
 
-	// Principals is the pattern-list for identities (USER@DOMAIN patterns).
+	// Principal is the pattern-list of identities (USER@DOMAIN patterns).
 	Principal string
 
 	// Options are optional constraints for this key.

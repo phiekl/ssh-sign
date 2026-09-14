@@ -13,11 +13,13 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
+// InspectOpts configures Inspect. SignatureFile is required.
 type InspectOpts struct {
 	Log           *slog.Logger
 	SignatureFile io.Reader
 }
 
+// InspectResult describes a parsed signature.
 type InspectResult struct {
 	sshsig.SignatureInfo
 }
@@ -35,6 +37,7 @@ func (r InspectResult) String() string {
 	)
 }
 
+// Inspect parses a signature and reports its contents.
 func Inspect(opts *InspectOpts) (*InspectResult, error) {
 	if opts == nil {
 		return nil, fmt.Errorf("options are required")

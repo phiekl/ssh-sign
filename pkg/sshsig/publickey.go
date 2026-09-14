@@ -21,7 +21,7 @@ func PublicKeyEqual(pk1, pk2 ssh.PublicKey) bool {
 // ParsePublicKeyLine parses a string like "[type] <data> [comment ...]" similar
 // to ssh.ParseAuthorizedKey(), but only cares about the data field.
 func ParsePublicKeyLine(pkLine string) (ssh.PublicKey, error) {
-	// pkgStr should contain "[type] <data> [comment ...]". If "type" was
+	// pkLine should contain "[type] <data> [comment ...]". If "type" was
 	// required here, ssh.ParseAuthorizedKey() could have been used instead.
 	tokens := strings.Fields(pkLine)
 	if len(tokens) == 0 {
@@ -30,7 +30,7 @@ func ParsePublicKeyLine(pkLine string) (ssh.PublicKey, error) {
 
 	pkEnc := tokens[0]
 	keyType := ""
-	// All key types contains a dash (e.g. ssh-ed25519), while base64 won't.
+	// Every key type contains a dash (e.g. ssh-ed25519), while base64 does not.
 	if strings.Contains(pkEnc, "-") {
 		if len(tokens) < 2 {
 			return nil, fmt.Errorf("no pubkey token found in %s", QuoteToken(pkLine))

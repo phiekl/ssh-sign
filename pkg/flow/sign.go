@@ -17,6 +17,7 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
+// SignOpts configures Sign. DataFile and Signer are required.
 type SignOpts struct {
 	DataFile  io.Reader
 	Log       *slog.Logger
@@ -24,10 +25,12 @@ type SignOpts struct {
 	Signer    ssh.Signer
 }
 
+// SignResult holds the created signature.
 type SignResult struct {
 	Signature *sshsig.Signature
 }
 
+// MarshalJSON renders the armored signature.
 func (r SignResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(
 		&struct {
@@ -42,6 +45,7 @@ func (r SignResult) String() string {
 	return strings.TrimSpace(string(sshsig.Armor(r.Signature)))
 }
 
+// Sign signs the data in the given namespace.
 func Sign(opts *SignOpts) (*SignResult, error) {
 	if opts == nil {
 		return nil, fmt.Errorf("options are required")

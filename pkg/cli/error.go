@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
+// Package cli provides the error classification, logging and result
+// formatting shared by the ssh-sign commands.
 package cli
 
 import "errors"

@@ -15,6 +15,8 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
+// VerifyOpts configures Verify. AllowedSignersFile, SignatureFile and
+// VerifyFile are required.
 type VerifyOpts struct {
 	AllowedSignersFile io.Reader
 	Log                *slog.Logger
@@ -26,6 +28,7 @@ type VerifyOpts struct {
 	VerifyFile         io.Reader
 }
 
+// VerifyResult holds the results of Verify.
 type VerifyResult struct {
 	Authentication string `json:"authentication"`
 	Designation    string `json:"designation"`
@@ -44,6 +47,8 @@ func (r VerifyResult) String() string {
 	)
 }
 
+// Verify checks a signature against an allowed signers file.
+// It reports all independent failures and may return a result with errors.
 func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	if opts == nil {
 		return nil, []error{fmt.Errorf("options are required")}
