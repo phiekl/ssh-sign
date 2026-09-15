@@ -388,6 +388,23 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			principal: "alice@example.com", wantAccepted: false,
 		},
 
+		// Only OpenSSH's whitespace separates fields; U+00A0 stays in the field.
+		{
+			name:      "nonbreaking space after the principal",
+			line:      "alice@example.com\u00a0 " + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name:      "nonbreaking space before the principal",
+			line:      "\u00a0alice@example.com " + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name:      "nonbreaking space in a validity option",
+			line:      "alice@example.com valid-after=\"20200101\u00a0\" " + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+
 		// Empty pattern elements match only empty values.
 		{
 			name: "empty pattern in principals", line: "alice@example.com,,bob@example.com " + keyLine,

@@ -21,6 +21,15 @@ const maxLineSize = 4 << 20
 // maxSkippedRecorded caps retained diagnostics for malformed input.
 const maxSkippedRecorded = 64
 
+// whitespace separates fields. Go's Unicode-aware trimming would additionally
+// drop code points such as U+00A0, which OpenSSH keeps as part of an identity.
+const whitespace = " \t"
+
+// trimSeparators removes leading and trailing spaces and tabs.
+func trimSeparators(s string) string {
+	return strings.Trim(s, whitespace)
+}
+
 // ParseError describes a malformed line that parsing skipped.
 type ParseError struct {
 	Line int
@@ -48,7 +57,7 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 	for sc.Scan() {
 		n++
 		line := sc.Text()
-		trim := strings.TrimSpace(line)
+		trim := trimSeparators(line)
 		if trim == "" {
 			continue
 		}
@@ -97,7 +106,7 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 
 	e := &Entry{Line: n}
 
-	e.Principal, err = unquotePrincipals(strings.TrimSpace(fields[0]))
+	e.Principal, err = unquotePrincipals(fields[0])
 	if err != nil {
 		return nil, &ParseError{Line: n, Msg: fmt.Sprintf("principals: %v", err)}
 	}
@@ -147,7 +156,7 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 // parseOptions parses the options fields in an allowed signers line.
 func parseOptions(s string) (Options, error) {
 	var o Options
-	if strings.TrimSpace(s) == "" {
+	if trimSeparators(s) == "" {
 		return o, nil
 	}
 
@@ -157,7 +166,7 @@ func parseOptions(s string) (Options, error) {
 	}
 
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
+		part = trimSeparators(part)
 		if part == "" {
 			return o, fmt.Errorf("empty option")
 		}
@@ -170,8 +179,8 @@ func parseOptions(s string) (Options, error) {
 			return o, fmt.Errorf("unknown option %s", sshsig.QuoteToken(part))
 		}
 
-		key := strings.ToLower(strings.TrimSpace(k))
-		val := strings.TrimSpace(v)
+		key := strings.ToLower(trimSeparators(k))
+		val := trimSeparators(v)
 		val, err = unquoteOptionValue(val)
 		if err != nil {
 			return o, fmt.Errorf("option %s: %w", sshsig.QuoteToken(key), err)
@@ -241,10 +250,10 @@ func splitFields(line string, limit int) ([]string, string, error) {
 			b.WriteByte(ch)
 			continue
 		}
-		if !inQuote && (ch == ' ' || ch == '\t') {
+		if !inQuote && strings.IndexByte(whitespace, ch) >= 0 {
 			complete := flush()
 			// consume additional whitespace
-			for i+1 < len(line) && (line[i+1] == ' ' || line[i+1] == '\t') {
+			for i+1 < len(line) && strings.IndexByte(whitespace, line[i+1]) >= 0 {
 				i++
 			}
 			if complete {
@@ -318,7 +327,7 @@ func isEscapedQuote(s string, i int) bool {
 
 // unquoteOptionValue removes quoting and unescapes escaped characters in an option value.
 func unquoteOptionValue(s string) (string, error) {
-	s = strings.TrimSpace(s)
+	s = trimSeparators(s)
 	if s == "" {
 		return "", nil
 	}

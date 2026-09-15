@@ -158,6 +158,34 @@ func TestParseSkipsUnsupportedPrincipalQuoting(t *testing.T) {
 	}
 }
 
+// Trimming Unicode whitespace would change the authorised identity.
+func TestParseKeepsUnicodeWhitespaceInIdentities(t *testing.T) {
+	const nbsp = "\u00a0"
+	for name, field := range map[string]string{
+		"trailing": "alice@example.com" + nbsp,
+		"leading":  nbsp + "alice@example.com",
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := parseLines(t, field+" "+testKey)
+			if len(f.Entries) != 1 {
+				t.Fatalf("entries = %d, want 1 (skipped: %v)", len(f.Entries), f.Skipped)
+			}
+			if got := f.Entries[0].Principal; got != field {
+				t.Errorf("Principal = %q, want %q", got, field)
+			}
+			entry, err := f.MatchEntry(
+				f.Entries[0].PublicKey, "alice@example.com", "git", time.Now(),
+			)
+			if err != nil {
+				t.Fatalf("MatchEntry() error = %v", err)
+			}
+			if entry != nil {
+				t.Error("MatchEntry() matched the trimmed identity")
+			}
+		})
+	}
+}
+
 // Reject spliced quoted fields that could authorise unintended principals.
 func TestParseSkipsASplicedQuotedField(t *testing.T) {
 	for name, line := range map[string]string{

@@ -17,7 +17,7 @@ import (
 //
 // Without Z => interpreted in local time zone, with Z => UTC.
 func ParseKeygenTimestamp(s string) (time.Time, error) {
-	s = strings.TrimSpace(s)
+	s = trimSeparators(s)
 	if s == "" {
 		return time.Time{}, fmt.Errorf("empty timestamp")
 	}
