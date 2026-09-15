@@ -88,15 +88,19 @@ func TestParseUnquotesPrincipals(t *testing.T) {
 		field string
 		want  string
 	}{
-		"quoted":        {field: `"alice@example.com"`, want: "alice@example.com"},
-		"quoted list":   {field: `"alice@example.com,bob@example.com"`, want: "alice@example.com,bob@example.com"},
-		"bare":          {field: "alice@example.com", want: "alice@example.com"},
-		"escaped quote": {field: `"alice\"bob"`, want: `alice"bob`},
+		"quoted":      {field: `"alice@example.com"`, want: "alice@example.com"},
+		"quoted list": {field: `"alice@example.com,bob@example.com"`, want: "alice@example.com,bob@example.com"},
+		"bare":        {field: "alice@example.com", want: "alice@example.com"},
+		// Quotes must not disable exclusions.
+		"quoted negation": {field: `*,!"bob@example.com"`, want: `*,!bob@example.com`},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			f := parseLines(t, tt.field+" "+testKey)
+			if len(f.Entries) != 1 {
+				t.Fatalf("entries = %d, want 1 (skipped: %v)", len(f.Entries), f.Skipped)
+			}
 			if got := f.Entries[0].Principal; got != tt.want {
 				t.Errorf("Principal = %q, want %q", got, tt.want)
 			}
@@ -106,8 +110,49 @@ func TestParseUnquotesPrincipals(t *testing.T) {
 			if err != nil {
 				t.Fatalf("MatchEntry() error = %v", err)
 			}
-			if name != "escaped quote" && entry == nil {
+			if entry == nil {
 				t.Error("MatchEntry() did not match the quoted principal")
+			}
+		})
+	}
+}
+
+// Quoted exclusions must still reject the named identity.
+func TestParseAppliesAQuotedExclusion(t *testing.T) {
+	f := parseLines(t, `*,!"alice@example.com" `+testKey)
+	if len(f.Entries) != 1 {
+		t.Fatalf("entries = %d, want 1 (skipped: %v)", len(f.Entries), f.Skipped)
+	}
+	for principal, want := range map[string]bool{
+		"alice@example.com": false,
+		"bob@example.com":   true,
+	} {
+		entry, err := f.MatchEntry(f.Entries[0].PublicKey, principal, "git", time.Now())
+		if err != nil {
+			t.Fatalf("MatchEntry(%q) error = %v", principal, err)
+		}
+		if got := entry != nil; got != want {
+			t.Errorf("MatchEntry(%q) matched = %v, want %v", principal, got, want)
+		}
+	}
+}
+
+// Reject quoting that OpenSSH cannot parse.
+func TestParseSkipsUnsupportedPrincipalQuoting(t *testing.T) {
+	for name, field := range map[string]string{
+		"escaped quote":            `"alice@example.com\"x"`,
+		"text after closing quote": `"alice@example.com",bob@example.com`,
+		"quote inside a bare word": `a"b"c`,
+		"unterminated quote":       `"alice@example.com`,
+		"trailing quote":           `alice@example.com"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := parseLines(t, field+" "+testKey)
+			if len(f.Entries) != 0 {
+				t.Errorf("entries = %+v, want the line skipped", f.Entries)
+			}
+			if len(f.Skipped) != 1 {
+				t.Fatalf("skipped = %d, want 1", len(f.Skipped))
 			}
 		})
 	}

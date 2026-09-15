@@ -328,18 +328,28 @@ func unquoteOptionValue(s string) (string, error) {
 	return unquote(s)
 }
 
-// unquotePrincipals accepts bare or quoted principals. Quotes within a bare
-// field remain literal; OpenSSH removes them.
+// unquotePrincipals removes the first quote pair, as OpenSSH does.
+// For example, !"alice" excludes alice. Reject text after the closing quote,
+// since OpenSSH treats it as the next field and rejects the line.
 func unquotePrincipals(s string) (string, error) {
-	if s == "" || s[0] != '"' {
+	open := strings.IndexByte(s, '"')
+	if open < 0 {
 		return s, nil
 	}
-	return unquote(s)
+	rest := s[open+1:]
+	closing := strings.IndexByte(rest, '"')
+	if closing < 0 {
+		return "", fmt.Errorf("unterminated quoted string")
+	}
+	if closing != len(rest)-1 {
+		return "", fmt.Errorf("data follows the closing quote")
+	}
+	return s[:open] + rest[:closing], nil
 }
 
 // unquote removes surrounding quotes and unescapes quotes within them.
-// Reject unescaped interior quotes: splicing `"alice,bob","carol"` would
-// authorise alice from a line ssh-keygen rejects.
+// Reject unescaped interior quotes: splicing `namespaces="a","b"` would
+// authorise a namespace from a line ssh-keygen rejects.
 func unquote(s string) (string, error) {
 	if len(s) < 2 || s[len(s)-1] != '"' {
 		return "", fmt.Errorf("unterminated quoted string")

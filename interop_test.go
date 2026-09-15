@@ -369,6 +369,25 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			principal: "alice@example.com", wantAccepted: false,
 		},
 
+		// Quotes must not disable exclusions.
+		{
+			name: "quoted negation", line: `*,!"alice@example.com" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name:      "quoted negation of another principal",
+			line:      `*,!"bob@example.com" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: true,
+		},
+		{
+			name: "quoted principal escaping a quote", line: `"alice@example.com\"x" ` + keyLine,
+			principal: `alice@example.com"x`, wantAccepted: false,
+		},
+		{
+			name: "text after the closing quote", line: `"alice@example.com",bob ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+
 		// Empty pattern elements match only empty values.
 		{
 			name: "empty pattern in principals", line: "alice@example.com,,bob@example.com " + keyLine,
