@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
@@ -21,13 +23,21 @@ const maxLineSize = 4 << 20
 // maxSkippedRecorded caps retained diagnostics for malformed input.
 const maxSkippedRecorded = 64
 
-// whitespace separates fields. Go's Unicode-aware trimming would additionally
-// drop code points such as U+00A0, which OpenSSH keeps as part of an identity.
+// whitespace lists field separators. Unicode spaces belong to identities.
+// Tabs are allowed; other non-graphic characters are rejected before parsing.
 const whitespace = " \t"
 
 // trimSeparators removes leading and trailing spaces and tabs.
 func trimSeparators(s string) string {
 	return strings.Trim(s, whitespace)
+}
+
+// skip counts a malformed line and records its error up to the limit.
+func (f *File) skip(perr ParseError) {
+	f.SkippedCount++
+	if len(f.Skipped) < maxSkippedRecorded {
+		f.Skipped = append(f.Skipped, perr)
+	}
 }
 
 // ParseError describes a malformed line that parsing skipped.
@@ -57,6 +67,10 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 	for sc.Scan() {
 		n++
 		line := sc.Text()
+		if err := validateLineCharacters(line); err != nil {
+			f.skip(ParseError{Line: n, Msg: err.Error()})
+			continue
+		}
 		trim := trimSeparators(line)
 		if trim == "" {
 			continue
@@ -66,10 +80,7 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 		}
 		entry, perr := parseLine(n, trim)
 		if perr != nil {
-			f.SkippedCount++
-			if len(f.Skipped) < maxSkippedRecorded {
-				f.Skipped = append(f.Skipped, *perr)
-			}
+			f.skip(*perr)
 			continue
 		}
 		f.Entries = append(f.Entries, *entry)
@@ -78,6 +89,28 @@ func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {
 		return nil, err
 	}
 	return &f, nil
+}
+
+// validateLineCharacters checks the whole line, including comments.
+// unicode.IsGraphic accepts Unicode spaces, letters, marks, numbers,
+// punctuation and symbols.
+func validateLineCharacters(line string) error {
+	if !utf8.ValidString(line) {
+		return fmt.Errorf("line contains invalid UTF-8")
+	}
+	for _, r := range line {
+		switch {
+		case r == '\t':
+			continue
+		case r == 0:
+			return fmt.Errorf("line contains a NUL byte")
+		case r == '\r':
+			return fmt.Errorf("line contains a carriage return")
+		case !unicode.IsGraphic(r):
+			return fmt.Errorf("line contains a non-printable character U+%04X", r)
+		}
+	}
+	return nil
 }
 
 // parseLine parses a single line fed from an allowed signers file.

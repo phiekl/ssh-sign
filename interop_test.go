@@ -255,6 +255,52 @@ func TestSecurityKeyOpenSSHInterop(t *testing.T) {
 	}
 }
 
+func TestAllowedSignersUnicodeAndControls(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key")
+	keyLine := generateOpenSSHKey(t, keygen, "ed25519", key)
+	const data = "Unicode policy verification\n"
+	for _, tt := range []struct {
+		name     string
+		value    string
+		accepted bool
+	}{
+		{"accent", "Jos\u00e9", true},
+		{"combining accent", "Jose\u0301", true},
+		{"Chinese", "\u674e\u96f7", true},
+		{"Arabic", "\u0639\u0644\u064a", true},
+		{"symbol", "\U0001f511", true},
+		{"nonbreaking space", "alice\u00a0smith", true},
+		{"em space", "alice\u2003smith", true},
+		{"escape", "alice\x1bsmith", false},
+		{"DEL", "alice\x7fsmith", false},
+		{"C1 control", "alice\u0085smith", false},
+		{"direction override", "alice\u202esmith", false},
+		{"zero width joiner", "alice\u200dsmith", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			caseDir := t.TempDir()
+			dataPath := filepath.Join(caseDir, "data")
+			allowed := filepath.Join(caseDir, "allowed_signers")
+			if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", tt.value, dataPath)
+			line := "\"" + tt.value + "\" namespaces=\"" + tt.value + "\" " + keyLine + "\n"
+			if err := os.WriteFile(allowed, []byte(line), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			verifyWithOpenSSH(t, keygen, allowed, dataPath+".sig", tt.value, tt.value, data)
+			_, stderr, code := run(t, "verify", "-a", allowed, "-f", dataPath,
+				"-s", dataPath+".sig", "-n", tt.value, "-p", tt.value)
+			if (code == 0) != tt.accepted {
+				t.Fatalf("accepted = %v, want %v: %s", code == 0, tt.accepted, stderr)
+			}
+		})
+	}
+}
+
 func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 	keygen := requireProgram(t, "ssh-keygen")
 	dir := t.TempDir()
@@ -284,6 +330,8 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 		ourTime      string
 		openSSHTime  string
 		wantAccepted bool
+		// stricter marks an entry that only ssh-keygen should accept.
+		stricter bool
 	}{
 		{
 			name: "plain", line: "alice@example.com " + keyLine,
@@ -405,6 +453,38 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			principal: "alice@example.com", wantAccepted: false,
 		},
 
+		// Reject stray CR and NUL bytes, even where ssh-keygen accepts the line.
+		{
+			name:      "carriage return after the principal",
+			line:      "alice@example.com\r " + keyLine,
+			principal: "alice@example.com", wantAccepted: false, stricter: true,
+		},
+		{
+			name:      "carriage return before the key type",
+			line:      "alice@example.com\r" + keyLine,
+			principal: "alice@example.com", wantAccepted: false, stricter: true,
+		},
+		{
+			name:      "carriage return inside the key",
+			line:      "alice@example.com " + keyLine + "\rcomment",
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name:      "NUL hides a second principal",
+			line:      "alice@example.com\x00,bob@example.com " + keyLine,
+			principal: "bob@example.com", wantAccepted: false,
+		},
+		{
+			name:      "NUL in an option value",
+			line:      "alice@example.com namespaces=\"file,other\x00\" " + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name:      "NUL in the key comment",
+			line:      "alice@example.com " + keyLine + " comment\x00more",
+			principal: "alice@example.com", wantAccepted: false, stricter: true,
+		},
+
 		// Empty pattern elements match only empty values.
 		{
 			name: "empty pattern in principals", line: "alice@example.com,,bob@example.com " + keyLine,
@@ -464,9 +544,10 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			openSSHOutput, openSSHCode := runProgramStatus(t, data, keygen, openSSHArgs...)
 			ourAccepted := ourCode == 0
 			openSSHAccepted := openSSHCode == 0
-			if ourAccepted != openSSHAccepted {
-				t.Errorf("acceptance differs: ssh-sign=%v OpenSSH=%v (OpenSSH output: %q)",
-					ourAccepted, openSSHAccepted, openSSHOutput)
+			// Only cases marked stricter may differ from ssh-keygen.
+			if wantOpenSSH := tt.wantAccepted || tt.stricter; openSSHAccepted != wantOpenSSH {
+				t.Errorf("OpenSSH accepted = %v, want %v (OpenSSH output: %q)",
+					openSSHAccepted, wantOpenSSH, openSSHOutput)
 			}
 			if ourAccepted != tt.wantAccepted {
 				t.Errorf("accepted = %v, want %v", ourAccepted, tt.wantAccepted)

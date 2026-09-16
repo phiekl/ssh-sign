@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 )
 
 func FuzzParse(f *testing.F) {
@@ -15,6 +17,9 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte(`alice@example.com namespaces="file,!secret" ` + testKey + ` owner "laptop` + "\n"))
 	f.Add([]byte(`alice@example.com namespaces="unterminated ` + testKey + "\n"))
 	f.Add([]byte("# comment\n\n"))
+	f.Add([]byte("alice namespaces=\"git\u202e\" " + testKey + "\n"))
+	f.Add([]byte("Jos\u00e9 namespaces=\"\u6587\u4ef6\" " + testKey + "\n"))
+	f.Add([]byte("alice " + testKey + " comment\xff\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
@@ -31,6 +36,17 @@ func FuzzParse(f *testing.F) {
 			}
 			if entry.Principal == "" {
 				t.Fatalf("entry %d has an empty principal", i)
+			}
+			fields := append([]string{entry.Principal, entry.Comment}, entry.Options.Namespaces...)
+			for _, field := range fields {
+				if !utf8.ValidString(field) {
+					t.Fatalf("entry %d has invalid UTF-8", i)
+				}
+				for _, r := range field {
+					if r != '\t' && !unicode.IsGraphic(r) {
+						t.Fatalf("entry %d contains U+%04X", i, r)
+					}
+				}
 			}
 			_ = entry.PublicKey.Marshal()
 		}

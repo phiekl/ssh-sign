@@ -5,6 +5,7 @@
 package allowedsigners
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +182,106 @@ func TestParseKeepsUnicodeWhitespaceInIdentities(t *testing.T) {
 			}
 			if entry != nil {
 				t.Error("MatchEntry() matched the trimmed identity")
+			}
+		})
+	}
+}
+
+// Reject carriage returns except those in CRLF line endings.
+func TestParseSkipsLinesHoldingACarriageReturn(t *testing.T) {
+	for name, line := range map[string]string{
+		"after the principal": "alice@example.com\r " + testKey,
+		"before the key type": "alice@example.com\r" + testKey,
+		"inside the key":      "alice@example.com " + testKey + "\rx",
+		"inside a quote":      "\"alice\rbob\" " + testKey,
+		"in the comment":      "alice@example.com " + testKey + " com\rment",
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := parseLines(t, line)
+			if len(f.Entries) != 0 {
+				t.Errorf("entries = %+v, want the line skipped", f.Entries)
+			}
+			if len(f.Skipped) != 1 {
+				t.Fatalf("skipped = %d, want 1", len(f.Skipped))
+			}
+			if !strings.Contains(f.Skipped[0].Msg, "carriage return") {
+				t.Errorf("Msg = %q, want the carriage return reported", f.Skipped[0].Msg)
+			}
+		})
+	}
+
+	// The scanner removes the CR in CRLF line endings.
+	f := parseLines(t, "alice@example.com "+testKey+"\r")
+	if len(f.Entries) != 1 {
+		t.Errorf("entries = %d, want CRLF line endings accepted (skipped: %v)",
+			len(f.Entries), f.Skipped)
+	}
+}
+
+// Reject NUL bytes anywhere in a line, including comments.
+func TestParseSkipsLinesHoldingANULByte(t *testing.T) {
+	for name, line := range map[string]string{
+		"hiding a principal": "alice@example.com\x00,bob@example.com " + testKey,
+		"in an option":       "alice@example.com namespaces=\"file,x\x00\" " + testKey,
+		"in the comment":     "alice@example.com " + testKey + " comment\x00more",
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := parseLines(t, line)
+			if len(f.Entries) != 0 {
+				t.Errorf("entries = %+v, want the line skipped", f.Entries)
+			}
+			if len(f.Skipped) != 1 {
+				t.Fatalf("skipped = %d, want 1", len(f.Skipped))
+			}
+			if !strings.Contains(f.Skipped[0].Msg, "NUL") {
+				t.Errorf("Msg = %q, want the NUL byte reported", f.Skipped[0].Msg)
+			}
+		})
+	}
+}
+
+func TestParseSkipsNonPrintableLines(t *testing.T) {
+	bad := []string{"\u200b", "\u200d", "\u202e", "\u2066", "\u2028", "\u2029", "\ufeff", "\ue000", "\uffff", "\xff", "\xc0\xaf", "\xed\xa0\x80"}
+	for r := rune(0); r <= 0x9f; r++ {
+		if r != '\t' && r != '\n' && (r < 0x20 || r >= 0x7f) {
+			bad = append(bad, string(r))
+		}
+	}
+	for _, value := range bad {
+		for name, line := range map[string]string{
+			"principal":    "\"alice" + value + "\" " + testKey,
+			"namespace":    "alice namespaces=\"git" + value + "\" " + testKey,
+			"key":          "alice " + testKey + value + "x",
+			"comment":      "alice " + testKey + " comment" + value + "x",
+			"comment line": "# comment" + value + "x",
+		} {
+			t.Run(fmt.Sprintf("%s/%x", name, value), func(t *testing.T) {
+				f := parseLines(t, line, "bob "+testKey)
+				if len(f.Entries) != 1 || f.Entries[0].Principal != "bob" || f.Entries[0].Line != 2 {
+					t.Fatalf("entries = %+v, want only the following valid entry", f.Entries)
+				}
+				if f.SkippedCount != 1 || len(f.Skipped) != 1 || f.Skipped[0].Line != 1 {
+					t.Fatalf("skips = %+v, total = %d, want line 1 skipped", f.Skipped, f.SkippedCount)
+				}
+			})
+		}
+	}
+}
+
+func TestParsePreservesGraphicUnicode(t *testing.T) {
+	for _, value := range []string{"Jos\u00e9", "Jose\u0301", "\u674e\u96f7", "\u0639\u0644\u064a", "\U0001f511", "a\u00a0b", "a\u2003b", "\ufffd"} {
+		t.Run(value, func(t *testing.T) {
+			f := parseLines(t, "\t\""+value+"\"\tnamespaces=\""+value+"\"\t"+testKey+"\tcomment\r")
+			if len(f.Entries) != 1 || f.SkippedCount != 0 {
+				t.Fatalf("entries = %d, skipped = %+v", len(f.Entries), f.Skipped)
+			}
+			ent := &f.Entries[0]
+			if ent.Principal != value || len(ent.Options.Namespaces) != 1 || ent.Options.Namespaces[0] != value {
+				t.Fatalf("Unicode changed: %+v", ent)
+			}
+			matched, err := f.MatchEntry(ent.PublicKey, value, value, time.Now())
+			if err != nil || matched == nil {
+				t.Fatalf("MatchEntry() = %v, %v", matched, err)
 			}
 		})
 	}
