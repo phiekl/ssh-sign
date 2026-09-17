@@ -361,11 +361,9 @@ func isEscapedQuote(s string, i int) bool {
 
 // unquoteOptionValue removes quoting and unescapes escaped characters in an option value.
 func unquoteOptionValue(s string) (string, error) {
+	// Even an empty option value must be quoted, as ssh-keygen requires.
 	s = trimSeparators(s)
-	if s == "" {
-		return "", nil
-	}
-	if s[0] != '"' {
+	if s == "" || s[0] != '"' {
 		return "", fmt.Errorf("missing start quote")
 	}
 	return unquote(s)

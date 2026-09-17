@@ -57,6 +57,37 @@ func TestEmptyPatternsAreInert(t *testing.T) {
 	}
 }
 
+// An empty namespaces value remains a restriction rather than leaving the
+// entry unrestricted. No valid signature has an empty namespace, so the entry
+// cannot match during signature verification.
+func TestParseRestrictsAnEmptyNamespacesValue(t *testing.T) {
+	f, err := Parse(strings.NewReader(`alice@example.com namespaces="" ` + testKey + "\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	if len(f.Entries) != 1 {
+		t.Fatalf("len(Entries) = %d, want 1", len(f.Entries))
+	}
+
+	// A nil list means no restriction, which would authorise every namespace.
+	got := f.Entries[0].Options.Namespaces
+	if len(got) != 1 || got[0] != "" {
+		t.Fatalf("Namespaces = %#v, want [\"\"]", got)
+	}
+
+	for ns, want := range map[string]bool{"file": false, "": true} {
+		entry, err := f.MatchEntry(
+			f.Entries[0].PublicKey, "alice@example.com", ns, time.Now(),
+		)
+		if want && err != nil {
+			t.Errorf("MatchEntry(%q) error = %v, want nil", ns, err)
+		}
+		if (entry != nil) != want {
+			t.Errorf("MatchEntry(%q) matched = %v, want %v", ns, entry != nil, want)
+		}
+	}
+}
+
 // Accept empty elements in both principal and namespace lists.
 func TestParseAcceptsEmptyPatterns(t *testing.T) {
 	for name, line := range map[string]string{

@@ -607,6 +607,11 @@ func TestParseSkipsUnquotedOptionValues(t *testing.T) {
 		// An even number of quotes survives splitting, but still has no
 		// leading quote of its own.
 		`namespaces=a"b"c`,
+		// An empty value needs a start quote too, so namespaces="" is the
+		// only way to write one.
+		`namespaces=`,
+		`valid-after=`,
+		`namespaces="git",valid-before=`,
 	} {
 		t.Run(options, func(t *testing.T) {
 			f, err := Parse(strings.NewReader("alice@example.com " + options + " " + testKey + "\n"))

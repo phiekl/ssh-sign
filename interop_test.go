@@ -402,6 +402,14 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			name: "unquoted validity option", line: `alice@example.com valid-after=20200101Z ` + keyLine,
 			principal: "alice@example.com", wantAccepted: false,
 		},
+		{
+			name: "empty unquoted option value", line: `alice@example.com namespaces= ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
+		{
+			name: "empty quoted option value", line: `alice@example.com namespaces="" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false,
+		},
 
 		// ssh-keygen ends the field at the first closing quote.
 		{
