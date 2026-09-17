@@ -5,6 +5,7 @@
 package sshsig
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -70,6 +71,23 @@ func TestParsePublicKeyTruncatesTheEchoedToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "1048577 bytes total") {
 		t.Errorf("ParsePublicKey() error = %v, want the full token length reported", err)
+	}
+}
+
+// Limit errors that repeat a large algorithm name from a decoded key.
+func TestParsePublicKeyTruncatesTheKeyParserError(t *testing.T) {
+	blob := ssh.Marshal(struct{ Name string }{Name: strings.Repeat("A", 1<<20)})
+
+	_, err := ParsePublicKey(base64.StdEncoding.EncodeToString(blob))
+	if err == nil {
+		t.Fatal("ParsePublicKey() unexpectedly succeeded")
+	}
+	if len(err.Error()) > 1024 {
+		t.Errorf("ParsePublicKey() error is %d bytes long, want it bounded",
+			len(err.Error()))
+	}
+	if !strings.Contains(err.Error(), "bytes total") {
+		t.Errorf("ParsePublicKey() error = %.120q, want the full length reported", err)
 	}
 }
 

@@ -5,10 +5,13 @@
 package allowedsigners
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // testKey is an ssh-ed25519 public key in authorized_keys format.
@@ -284,6 +287,20 @@ func TestParsePreservesGraphicUnicode(t *testing.T) {
 				t.Fatalf("MatchEntry() = %v, %v", matched, err)
 			}
 		})
+	}
+}
+
+// Limit retained error messages for malformed keys.
+func TestParseBoundsTheKeyParserDiagnostic(t *testing.T) {
+	blob := ssh.Marshal(struct{ Name string }{Name: strings.Repeat("A", 1<<20)})
+	line := "alice@example.com ssh-ed25519 " + base64.StdEncoding.EncodeToString(blob)
+
+	f := parseLines(t, line)
+	if len(f.Skipped) != 1 {
+		t.Fatalf("skipped = %d, want 1", len(f.Skipped))
+	}
+	if got := len(f.Skipped[0].Msg); got > 1024 {
+		t.Errorf("retained diagnostic is %d bytes long, want it bounded", got)
 	}
 }
 
