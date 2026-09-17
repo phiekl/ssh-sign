@@ -203,7 +203,7 @@ func parseOptions(s string) (Options, error) {
 		if part == "" {
 			return o, fmt.Errorf("empty option")
 		}
-		if strings.EqualFold(part, "cert-authority") {
+		if part == "cert-authority" {
 			return o, fmt.Errorf("%q option is not yet supported", part)
 		}
 
@@ -212,7 +212,8 @@ func parseOptions(s string) (Options, error) {
 			return o, fmt.Errorf("unknown option %s", sshsig.QuoteToken(part))
 		}
 
-		key := strings.ToLower(trimSeparators(k))
+		// Require lowercase option names, unlike ssh-keygen.
+		key := trimSeparators(k)
 		val := trimSeparators(v)
 		val, err = unquoteOptionValue(val)
 		if err != nil {
@@ -343,7 +344,7 @@ func splitOptions(s string) ([]string, error) {
 // tokenIsOption checks if a token looks like an option.
 func tokenIsOption(s string) bool {
 	// This is the only standalone option not containing '='.
-	if strings.EqualFold(s, "cert-authority") {
+	if s == "cert-authority" {
 		return true
 	}
 	// A string that matches [",=] should be an option.

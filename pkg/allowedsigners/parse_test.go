@@ -357,7 +357,6 @@ func TestParseOptions(t *testing.T) {
 		want    []string
 	}{
 		{name: "quoted list", options: `namespaces="git,email"`, want: []string{"git", "email"}},
-		{name: "uppercase key", options: `NAMESPACES="git"`, want: []string{"git"}},
 		{name: "space inside quotes", options: `namespaces="a b"`, want: []string{"a b"}},
 		{
 			name:    "alongside other options",
@@ -419,7 +418,11 @@ func TestParseSkipsMalformedLines(t *testing.T) {
 		"key type mismatch":  "alice@example.com ssh-rsa " + strings.Fields(testKey)[1],
 		"invalid key":        "alice@example.com ssh-ed25519 not-base64!",
 		"unknown option":     `alice@example.com bogus="x" ` + testKey,
+		"uppercase option":   `alice@example.com NAMESPACES="git" ` + testKey,
+		"mixed-case option":  `alice@example.com NameSpaces="git" ` + testKey,
 		"cert-authority":     "alice@example.com cert-authority " + testKey,
+		"uppercase CA":       "alice@example.com CERT-AUTHORITY " + testKey,
+		"mixed-case CA":      "alice@example.com Cert-Authority " + testKey,
 		"unterminated quote": `alice@example.com namespaces="git ` + testKey,
 		"bad valid-after":    `alice@example.com valid-after="nonsense" ` + testKey,
 	}

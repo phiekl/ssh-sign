@@ -101,7 +101,7 @@ func TestParseAndMatchPrincipalPatternList(t *testing.T) {
 }
 
 func TestParseAndMatchNamespacePatternList(t *testing.T) {
-	const line = `alice@example.com NAMESPACES="file-*,!file-secret" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk` + "\n"
+	const line = `alice@example.com namespaces="file-*,!file-secret" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk` + "\n"
 
 	file, err := Parse(strings.NewReader(line))
 	if err != nil {

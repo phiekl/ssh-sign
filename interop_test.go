@@ -355,7 +355,7 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			principal: "alice@example.com", wantAccepted: false,
 		},
 		{
-			name: "namespace wildcard", line: `alice@example.com NAMESPACES="f*" ` + keyLine,
+			name: "namespace wildcard", line: `alice@example.com namespaces="f*" ` + keyLine,
 			principal: "alice@example.com", wantAccepted: true,
 		},
 		{
@@ -451,6 +451,13 @@ func TestAllowedSignersMatchesOpenSSH(t *testing.T) {
 			name:      "nonbreaking space in a validity option",
 			line:      "alice@example.com valid-after=\"20200101\u00a0\" " + keyLine,
 			principal: "alice@example.com", wantAccepted: false,
+		},
+
+		// ssh-keygen ignores option name case; ssh-sign requires lowercase.
+		{
+			name:      "uppercase option name",
+			line:      `alice@example.com NAMESPACES="file" ` + keyLine,
+			principal: "alice@example.com", wantAccepted: false, stricter: true,
 		},
 
 		// Reject stray CR and NUL bytes, even where ssh-keygen accepts the line.
