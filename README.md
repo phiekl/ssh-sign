@@ -304,6 +304,12 @@ Enabling JSON output for the last one gives:
 > signers entry. The signer's key must still appear in the allowed signers file.
 
 > [!NOTE]
+> The file format and cases where this parser is deliberately stricter than
+> `ssh-keygen` are documented in
+> [doc/ALLOWED_SIGNERS.md](doc/ALLOWED_SIGNERS.md). A malformed line is skipped
+> rather than fatal; use `-v` to list what was skipped.
+
+> [!NOTE]
 > A `-t` timestamp without a time zone and an allowed-signers timestamp without
 > a trailing `Z` are interpreted in the local time zone, matching `ssh-keygen`.
 > For reproducible CI results, include an RFC3339 offset in the `-t` value and
