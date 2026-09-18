@@ -26,13 +26,6 @@ const signalScopeErrata = 1 << 1
 
 var errUnsupported = errors.New("unsupported by this kernel")
 
-// Available reports whether go-landlock can enforce a nonempty policy after
-// its ABI cap, errata downgrade, and build-tag-dependent minimum.
-func Available() bool {
-	status, err := detectedABI()
-	return err == nil && status.effective > 0
-}
-
 // kernelABI returns the raw kernel ABI without go-landlock's errata downgrades.
 // It can distinguish unavailable enforcement, but not the effective ABI.
 func kernelABI() (int, error) {

@@ -242,7 +242,7 @@ func runChildAction(action, target string) int {
 
 func mustRestrict() {
 	// Tests requiring enforcement must not accept a best-effort no-op.
-	if !Available() {
+	if !available() {
 		childFatal("landlock is unavailable")
 	}
 	if err := Restrict(nil); err != nil {
@@ -305,7 +305,7 @@ func runChild(t *testing.T, action, target string) string {
 
 func requireLandlock(t *testing.T) {
 	t.Helper()
-	if !Available() {
+	if !available() {
 		t.Skip("landlock is unavailable on this kernel")
 	}
 }

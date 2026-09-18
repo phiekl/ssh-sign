@@ -10,6 +10,13 @@ import (
 	"testing"
 )
 
+// available reports whether Landlock can enforce a policy with this build
+// and kernel.
+func available() bool {
+	status, err := detectedABI()
+	return err == nil && status.effective > 0
+}
+
 func TestEffectiveABI(t *testing.T) {
 	want := func(abi int) int {
 		if abi < minimumRequiredABI {
@@ -41,7 +48,7 @@ func TestEffectiveABI(t *testing.T) {
 }
 
 func TestRestrictWithoutKernelSupport(t *testing.T) {
-	if Available() {
+	if available() {
 		t.Skip("landlock is available here, so its absence cannot be observed")
 	}
 
