@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"pxy.se/go/argparse"
 	"pxy.se/go/ssh-sign/internal/cmd"
@@ -64,7 +63,7 @@ func main() {
 	)
 
 	if err := p.ParseCurrentArgs(); err != nil {
-		exitForParserSentinel(err)
+		exitOnHelpOrUsage(err)
 		dieUsage("usage", err)
 	}
 	// Keep debug output separate from results.
@@ -81,8 +80,8 @@ func main() {
 		commandOpts = []string{"--"}
 	}
 	if err := opts.Command.Run("ssh-sign "+opts.CommandName, commandOpts); err != nil {
-		exitForParserSentinel(err)
-		if commandRunInternalError(err) {
+		exitOnHelpOrUsage(err)
+		if argparse.IsInternal(err) {
 			die(opts.CommandName, err)
 		}
 		dieUsage(opts.CommandName, err)
@@ -118,10 +117,12 @@ func main() {
 		}
 	}
 	os.Exit(0)
-
 }
 
-func exitForParserSentinel(err error) {
+// exitOnHelpOrUsage exits after the parser writes help or usage.
+// Match errors exactly: argparse wraps failed help writes, which the caller
+// must report. Other errors also return to the caller.
+func exitOnHelpOrUsage(err error) {
 	switch err {
 	case argparse.ErrHelp:
 		os.Exit(0)
@@ -156,9 +157,4 @@ func reportErrors(prefix string, errs ...error) {
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "error: %s: %s\n", prefix, cli.EscapeControl(err.Error()))
 	}
-}
-
-func commandRunInternalError(err error) bool {
-	return err.Error() == "command implementation not set" ||
-		strings.HasPrefix(err.Error(), "command result capture:")
 }

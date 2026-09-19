@@ -10,5 +10,5 @@ golang.org/x/term v0.39.0 h1:RclSuaJf32jOqZz74CkPA9qFuVTX7vhLlpfj/IGWlqY=
 golang.org/x/term v0.39.0/go.mod h1:yxzUCTP/U+FzoxfdKmLaA0RV1WgE0VY7hXBwKtY/4ww=
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 h1:Z06sMOzc0GNCwp6efaVrIrz4ywGJ1v+DP0pjVkOfDuA=
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.77/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
-pxy.se/go/argparse v0.1.7 h1:3t22y4ZzJJrm9FIERW3WqhsvIifInYkS1vLZDvXd+8U=
-pxy.se/go/argparse v0.1.7/go.mod h1:8NdlwhgC9uIhxs8zbjgmjI1IF/bzrmlpvDCuhtkfFNI=
+pxy.se/go/argparse v0.2.0 h1:+VBQYSY0dHL8QDf/GMuOF7BeYUvRlsWXQTTYQDQohM4=
+pxy.se/go/argparse v0.2.0/go.mod h1:8NdlwhgC9uIhxs8zbjgmjI1IF/bzrmlpvDCuhtkfFNI=

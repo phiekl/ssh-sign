@@ -741,6 +741,26 @@ func (shortWriter) Write(p []byte) (int, error) {
 	return len(p) / 2, nil
 }
 
+// Failed help writes return wrapped errors and must produce a nonzero exit.
+func TestFailedHelpWriteDoesNotExitSuccessfully(t *testing.T) {
+	full, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+	if err != nil {
+		t.Skipf("cannot open /dev/full: %v", err)
+	}
+	defer func() { _ = full.Close() }()
+
+	var stderr bytes.Buffer
+	command := exec.Command(binary, "--help")
+	command.Stdout = full
+	command.Stderr = &stderr
+	if err := command.Run(); err == nil {
+		t.Fatal("--help exited successfully after failing to write the help text")
+	}
+	if stderr.Len() == 0 {
+		t.Error("stderr is empty, want the write failure reported")
+	}
+}
+
 func TestWriteOutputRejectsShortWrite(t *testing.T) {
 	if err := writeOutput(shortWriter{}, "result"); !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("writeOutput() error = %v, want io.ErrShortWrite", err)
