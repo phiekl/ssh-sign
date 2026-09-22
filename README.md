@@ -181,6 +181,14 @@ ErHRKw6biwpo2ZeYpEvmFQAxqn5iFWczak8drGAM
   -s, --signature-file string   read signature from file instead of stdin
 ```
 
+`inspect`, `check`, and `verify` accept trailing ASCII whitespace in
+signatures, including an extra newline from terminal pasting. When the
+signature comes from stdin without `-s`, they also accept up to 1024 bytes of
+whitespace-only lines before the header. This leading whitespace allowance
+extends the SSHSIG format and `ssh-keygen` behavior. Signature files must still
+start with the header.  Unlike `ssh-keygen`, `ssh-sign` rejects non-whitespace
+text after the END line.
+
 #### Example
 
 ```

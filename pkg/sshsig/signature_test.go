@@ -238,6 +238,9 @@ func TestSignatureRead(t *testing.T) {
 		t.Fatalf("SignatureCreate() error = %v", err)
 	}
 	armored := string(Armor(sig))
+	if _, err := SignatureRead(strings.NewReader(armored + " \t\r\n")); err != nil {
+		t.Fatalf("SignatureRead() with trailing whitespace: %v", err)
+	}
 	block, _ := pem.Decode([]byte(armored))
 	var wire signatureWire
 	if err := ssh.Unmarshal(block.Bytes, &wire); err != nil {
@@ -263,6 +266,10 @@ func TestSignatureRead(t *testing.T) {
 		"data before signature": {
 			input:   "-----BEGIN SSH SIGNATURE-----\ngarbage\n" + armored,
 			wantErr: "data found before signature",
+		},
+		"data after signature": {
+			input:   armored + "garbage",
+			wantErr: "data found after signature",
 		},
 		// Oversized input is refused rather than buffered without bound.
 		"too large": {

@@ -52,7 +52,7 @@ func (c *VerifyCommand) Command() (any, []error) {
 	c.commandOpts.AllowedSignersFile = allowedSignersFile
 
 	if c.signatureFile == "" {
-		c.commandOpts.SignatureFile = os.Stdin
+		c.commandOpts.SignatureFile = &signatureStdinReader{source: os.Stdin}
 	} else {
 		signatureFile, err := os.Open(c.signatureFile)
 		if err != nil {

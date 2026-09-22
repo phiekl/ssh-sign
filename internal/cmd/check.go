@@ -60,7 +60,7 @@ func (c *CheckCommand) Command() (any, []error) {
 	}
 
 	if c.signatureFile == "" {
-		c.commandOpts.SignatureFile = os.Stdin
+		c.commandOpts.SignatureFile = &signatureStdinReader{source: os.Stdin}
 	} else {
 		f, err := os.Open(c.signatureFile)
 		if err != nil {

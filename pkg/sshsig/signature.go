@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// maxSignatureArmorSize limits memory use while allowing certificate signatures.
-const maxSignatureArmorSize = 1 << 20
+// MaxSignatureArmorSize limits memory use while allowing certificate signatures.
+const MaxSignatureArmorSize = 1 << 20
 
 // SignatureCreate creates a signature of the input data.
 func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*Signature, error) {
@@ -44,7 +44,7 @@ func SignatureCreate(signer ssh.Signer, ns string, in io.Reader) (*Signature, er
 
 // SignatureRead unarmors a signature from the input data.
 func SignatureRead(in io.Reader) (*Signature, error) {
-	return signatureRead(in, maxSignatureArmorSize)
+	return signatureRead(in, MaxSignatureArmorSize)
 }
 
 func signatureRead(in io.Reader, max int64) (*Signature, error) {
@@ -82,7 +82,7 @@ func signatureRead(in io.Reader, max int64) (*Signature, error) {
 	if len(block.Headers) != 0 {
 		return nil, fmt.Errorf("unarmoring data failed: PEM headers are not allowed")
 	}
-	if len(rest) != 0 {
+	if len(bytes.Trim(rest, " \t\r\n")) != 0 {
 		return nil, fmt.Errorf("unarmoring data failed: data found after signature")
 	}
 

@@ -27,7 +27,7 @@ func (c *InspectCommand) Command() (any, []error) {
 	c.commandOpts.Log = log
 
 	if c.signatureFile == "" {
-		c.commandOpts.SignatureFile = os.Stdin
+		c.commandOpts.SignatureFile = &signatureStdinReader{source: os.Stdin}
 	} else {
 		f, err := os.Open(c.signatureFile)
 		if err != nil {

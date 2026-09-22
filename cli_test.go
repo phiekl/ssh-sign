@@ -798,6 +798,80 @@ func TestCommandStdinPaths(t *testing.T) {
 	}
 }
 
+func TestPastedSignatureWhitespace(t *testing.T) {
+	f := newFixture(t, "file")
+	armored, err := os.ReadFile(f.signature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pasted := " \t\r\n\n" + string(armored) + "\r\n \t"
+	for name, args := range map[string][]string{
+		"inspect": {"inspect"},
+		"check":   {"check", "-f", f.data, "-K"},
+		"verify":  {"verify", "-a", f.allowed, "-f", f.data, "-p", f.principal, "-n", "file"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, stderr, code := runWithInput(t, pasted, args...)
+			if code != 0 {
+				t.Errorf("pasted signature: code=%d stderr=%q", code, stderr)
+			}
+		})
+	}
+	for name, input := range map[string]string{
+		"leading whitespace at limit": strings.Repeat("\n", 1024) + string(armored),
+		"trailing whitespace":         string(armored) + strings.Repeat("\n", 1025),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, stderr, code := runWithInput(t, input, "inspect")
+			if code != 0 {
+				t.Errorf("pasted signature: code=%d stderr=%q", code, stderr)
+			}
+		})
+	}
+
+	for name, tt := range map[string]struct {
+		prefix  string
+		wantErr string
+	}{
+		"indented header":     {prefix: " ", wantErr: "unarmoring data failed: signature header is not at the beginning of a line"},
+		"other data":          {prefix: "garbage\n", wantErr: "unarmoring data failed"},
+		"malformed block":     {prefix: "-----BEGIN SSH SIGNATURE-----\ngarbage\n", wantErr: "unarmoring data failed: data found before signature"},
+		"too much whitespace": {prefix: strings.Repeat("\n", 1025), wantErr: "unarmoring data failed: too much leading whitespace"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, stderr, code := runWithInput(t, tt.prefix+string(armored), "inspect")
+			if code == 0 || !strings.Contains(stderr, tt.wantErr) {
+				t.Errorf("code=%d stderr=%q, want %q", code, stderr, tt.wantErr)
+			}
+		})
+	}
+	t.Run("whitespace only", func(t *testing.T) {
+		_, stderr, code := runWithInput(t, strings.Repeat("\n", 1025), "inspect")
+		if code == 0 || !strings.Contains(stderr, "no data read") {
+			t.Errorf("code=%d stderr=%q, want no data read", code, stderr)
+		}
+	})
+
+	for name, tt := range map[string]struct {
+		content string
+		accept  bool
+	}{
+		"leading whitespace":  {content: "\n" + string(armored)},
+		"trailing whitespace": {content: string(armored) + "\n", accept: true},
+	} {
+		t.Run("file "+name, func(t *testing.T) {
+			path := filepath.Join(f.dir, name+".sig")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, code := run(t, "inspect", "-s", path)
+			if (code == 0) != tt.accept {
+				t.Errorf("exit status = %d, want acceptance %t", code, tt.accept)
+			}
+		})
+	}
+}
+
 func TestSignValidatesKeyBeforeOpeningFIFO(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "data.fifo")
 	mkfifo, err := exec.LookPath("mkfifo")
