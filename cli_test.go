@@ -685,6 +685,71 @@ func TestInspectTextAndJSONAgreeOnFields(t *testing.T) {
 	}
 }
 
+func TestInspectShowsSecurityKeyFields(t *testing.T) {
+	dir := t.TempDir()
+	signature := filepath.Join(dir, "sk.sig")
+	if err := os.WriteFile(signature, []byte(skVerifiedSignature), 0o600); err != nil {
+		t.Fatalf("writing signature: %v", err)
+	}
+
+	stdout, stderr, code := run(t, "inspect", "-s", signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	for _, want := range []string{
+		"publickey_application | ssh:",
+		"securitykey_flags     | 0x05 (presence,user-verified)",
+		"securitykey_counter   | 13",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout = %q, want it to hold %q", stdout, want)
+		}
+	}
+
+	encoded, _, code := run(t, "-j", "inspect", "-s", signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0", code)
+	}
+	result := decodeJSON(t, encoded)["result"].(map[string]any)
+	publicKey := result["public_key"].(map[string]any)
+	if publicKey["application"] != "ssh:" {
+		t.Errorf("public_key.application = %v, want ssh:", publicKey["application"])
+	}
+	sk, ok := result["signature"].(map[string]any)["security_key"].(map[string]any)
+	if !ok {
+		t.Fatalf("JSON output %q is missing signature.security_key", encoded)
+	}
+	if sk["flags"] != "0x05" || sk["counter"] != "13" ||
+		sk["user_presence"] != true || sk["user_verification"] != true ||
+		sk["backup_eligible"] != false || sk["backed_up"] != false {
+		t.Errorf("security_key = %v, want the vector's fields", sk)
+	}
+}
+
+func TestInspectOmitsSecurityKeyFieldsForPlainKeys(t *testing.T) {
+	f := newFixture(t, "file")
+
+	stdout, _, code := run(t, "inspect", "-s", f.signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0", code)
+	}
+	if strings.Contains(stdout, "securitykey_") {
+		t.Errorf("stdout = %q, want no security-key rows", stdout)
+	}
+	if strings.Contains(stdout, "publickey_application") {
+		t.Errorf("stdout = %q, want no application row", stdout)
+	}
+
+	encoded, _, _ := run(t, "-j", "inspect", "-s", f.signature)
+	result := decodeJSON(t, encoded)["result"].(map[string]any)
+	if _, ok := result["public_key"].(map[string]any)["application"]; ok {
+		t.Errorf("JSON output %q holds application for an ed25519 key", encoded)
+	}
+	if _, ok := result["signature"].(map[string]any)["security_key"]; ok {
+		t.Errorf("JSON output %q holds security_key for an ed25519 signature", encoded)
+	}
+}
+
 func TestOutputWriteFailureIsReported(t *testing.T) {
 	f := newFixture(t, "file")
 
@@ -1359,3 +1424,14 @@ func TestLandlockKeepsTimestampsLocal(t *testing.T) {
 		t.Errorf("stdout = %q, want a valid verification", stdout)
 	}
 }
+
+// skVerifiedSignature is a security-key signature made with -O verify-required,
+// so its flags carry both user presence and user verification.
+const skVerifiedSignature = `-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAAEoAAAAac2stc3NoLWVkMjU1MTlAb3BlbnNzaC5jb20AAAAgQYSR0Z
+zcrro/7SvnX85lti6ndNRci/QTed2jeW6cEhgAAAAEc3NoOgAAAARmaWxlAAAAAAAAAAZz
+aGE1MTIAAABnAAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAQHokh8iKa9Kg5e
+Y5ATRFEmafGGcAIP73iEVG1oBpCOmXY2ydEexu0nKP89JJ8q2d93r9RhymmXMF+6+aFiGN
+xAkFAAAADQ==
+-----END SSH SIGNATURE-----
+`

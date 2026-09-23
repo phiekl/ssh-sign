@@ -77,9 +77,10 @@ func PublicKeyString(pk ssh.PublicKey) string {
 
 // PublicKeyInfo is a human-readable representation of a ssh.PublicKey.
 type PublicKeyInfo struct {
-	Format      string `json:"format"`
-	Blob        string `json:"blob"`
-	Fingerprint string `json:"fingerprint"`
+	Format      string  `json:"format"`
+	Blob        string  `json:"blob"`
+	Fingerprint string  `json:"fingerprint"`
+	Application *string `json:"application,omitempty"`
 }
 
 // NewPublicKeyInfo populates a new PublicKeyInfo.
@@ -88,5 +89,35 @@ func NewPublicKeyInfo(pk ssh.PublicKey) PublicKeyInfo {
 		Format:      pk.Type(),
 		Blob:        base64.StdEncoding.EncodeToString(pk.Marshal()),
 		Fingerprint: ssh.FingerprintSHA256(pk),
+		Application: securityKeyApplication(pk),
 	}
+}
+
+// securityKeyApplication reads the application embedded in a FIDO public key.
+func securityKeyApplication(pk ssh.PublicKey) *string {
+	if cert, _ := asCertificate(pk); cert != nil {
+		pk = cert.Key
+	}
+	switch pk.Type() {
+	case ssh.KeyAlgoSKED25519:
+		var wire struct {
+			Name        string
+			Key         []byte
+			Application string
+		}
+		if ssh.Unmarshal(pk.Marshal(), &wire) == nil {
+			return &wire.Application
+		}
+	case ssh.KeyAlgoSKECDSA256:
+		var wire struct {
+			Name        string
+			Curve       string
+			Key         []byte
+			Application string
+		}
+		if ssh.Unmarshal(pk.Marshal(), &wire) == nil {
+			return &wire.Application
+		}
+	}
+	return nil
 }

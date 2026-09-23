@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -174,10 +175,73 @@ func SignatureVerify(in io.Reader, sig *Signature) error {
 	return nil
 }
 
+// Authenticator data flags, as defined by WebAuthn.
+const (
+	skFlagUserPresence     = 0x01
+	skFlagUserVerification = 0x04
+	skFlagBackupEligible   = 0x08
+	skFlagBackedUp         = 0x10
+)
+
+// SecurityKeyInfo is a human-readable representation of SecurityKeyFields.
+// The booleans decode Flags so callers need not know its bit positions.
+// FlagsText derives its labels from Flags even if the booleans disagree.
+type SecurityKeyInfo struct {
+	Flags            string `json:"flags"`
+	UserPresence     bool   `json:"user_presence"`
+	UserVerification bool   `json:"user_verification"`
+	BackupEligible   bool   `json:"backup_eligible"`
+	BackedUp         bool   `json:"backed_up"`
+	Counter          uint32 `json:"counter,string"`
+}
+
+func newSecurityKeyInfo(fields *SecurityKeyFields) *SecurityKeyInfo {
+	return &SecurityKeyInfo{
+		Flags:            fmt.Sprintf("0x%02x", fields.Flags),
+		UserPresence:     fields.Flags&skFlagUserPresence != 0,
+		UserVerification: fields.Flags&skFlagUserVerification != 0,
+		BackupEligible:   fields.Flags&skFlagBackupEligible != 0,
+		BackedUp:         fields.Flags&skFlagBackedUp != 0,
+		Counter:          fields.Counter,
+	}
+}
+
+// FlagsText renders the raw flags byte and the recognized bits.
+func (i SecurityKeyInfo) FlagsText() string {
+	// Decode Flags here so values read from JSON render the same way.
+	flags, err := strconv.ParseUint(i.Flags, 0, 8)
+	if err != nil {
+		return i.Flags
+	}
+	var names []string
+	if flags&skFlagUserPresence != 0 {
+		names = append(names, "presence")
+	}
+	if flags&skFlagUserVerification != 0 {
+		names = append(names, "user-verified")
+	}
+	if flags&skFlagBackupEligible != 0 {
+		names = append(names, "backup-eligible")
+	}
+	if flags&skFlagBackedUp != 0 {
+		names = append(names, "backed-up")
+	}
+	const known = skFlagUserPresence | skFlagUserVerification |
+		skFlagBackupEligible | skFlagBackedUp
+	if flags&^known != 0 {
+		names = append(names, "other-bits")
+	}
+	if len(names) == 0 {
+		names = append(names, "none")
+	}
+	return fmt.Sprintf("%s (%s)", i.Flags, strings.Join(names, ","))
+}
+
 // SignatureDataInfo is a human-readable representation of an ssh.Signature.
 type SignatureDataInfo struct {
-	Format string `json:"format"`
-	Blob   string `json:"blob"`
+	Format      string           `json:"format"`
+	Blob        string           `json:"blob"`
+	SecurityKey *SecurityKeyInfo `json:"security_key,omitempty"`
 }
 
 // NewSignatureDataInfo populates a new SignatureDataInfo.
@@ -197,13 +261,18 @@ type SignatureInfo struct {
 	Signature     SignatureDataInfo `json:"signature"`
 }
 
-// NewSignatureInfo populates a new SignatureInfo.
+// NewSignatureInfo populates a new SignatureInfo, omitting malformed
+// security-key fields.
 func NewSignatureInfo(sig *Signature) SignatureInfo {
-	return SignatureInfo{
+	info := SignatureInfo{
 		Version:       sig.Version,
 		PublicKey:     NewPublicKeyInfo(sig.PublicKey),
 		Namespace:     sig.Namespace,
 		HashAlgorithm: sig.HashAlgorithm.String(),
 		Signature:     NewSignatureDataInfo(sig.Signature),
 	}
+	if fields, err := sig.SecurityKeyFields(); err == nil && fields != nil {
+		info.Signature.SecurityKey = newSecurityKeyInfo(fields)
+	}
+	return info
 }

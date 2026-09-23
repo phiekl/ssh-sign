@@ -25,16 +25,28 @@ type InspectResult struct {
 }
 
 func (r InspectResult) String() string {
-	return cli.ResultFormatKV(-22, " ", "| ",
+	fields := []cli.Field{
 		cli.KV("version", r.Version),
 		cli.KV("publickey_format", r.PublicKey.Format),
 		cli.KV("publickey_blob", r.PublicKey.Blob),
 		cli.KV("publickey_fingerprint", r.PublicKey.Fingerprint),
+	}
+	if app := r.PublicKey.Application; app != nil {
+		fields = append(fields, cli.KV("publickey_application", *app))
+	}
+	fields = append(fields,
 		cli.KV("namespace", r.Namespace),
 		cli.KV("hash_algorithm", r.HashAlgorithm),
 		cli.KV("signature_format", r.Signature.Format),
 		cli.KV("signature_blob", r.Signature.Blob),
 	)
+	if sk := r.Signature.SecurityKey; sk != nil {
+		fields = append(fields,
+			cli.KV("securitykey_flags", sk.FlagsText()),
+			cli.KV("securitykey_counter", sk.Counter),
+		)
+	}
+	return cli.ResultFormatKV(-22, " ", "| ", fields...)
 }
 
 // Inspect parses a signature and reports its contents.

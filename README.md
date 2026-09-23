@@ -223,6 +223,28 @@ Alternatively with JSON output via e.g. `ssh-sign -j inspect -s data.sig`:
 }
 ```
 
+A signature from a FIDO security key carries flags and a counter after the
+signature itself. `inspect` reports these as `securitykey_` rows, or as
+`signature.security_key` in JSON. It also shows the key's application as
+`publickey_application` in text and `public_key.application` in JSON:
+
+```
+ publickey_application | ssh:
+ securitykey_flags     | 0x05 (presence,user-verified)
+ securitykey_counter   | 13
+```
+
+The raw byte is kept alongside the names, so a flag this tool does not decode
+is still visible. JSON reports `flags`, `user_presence`, `user_verification`,
+`backup_eligible`, `backed_up` and `counter` separately.
+
+> [!NOTE]
+> `inspect` reads these fields without verifying the signature. Verification
+> shows that the flags and counter were signed by the matching private key,
+> but cannot prove that the key is genuine hardware or that a touch happened.
+> The `presence` flag is the signer's report of a user-presence check. A key
+> created with `no-touch-required` can sign without that check and may show
+> `0x00 (none)` when no flags are set.
 
 ### Check
 

@@ -9,6 +9,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
 	"io"
@@ -23,7 +24,8 @@ import (
 //	ssh-keygen -Y sign -f key -n file data
 //
 // over goldenData, so parsing, verification and armoring are pinned to what
-// ssh-keygen actually emits rather than to this implementation.
+// ssh-keygen actually emits rather than to this implementation. The
+// security-key vectors came from a FIDO authenticator the same way.
 const goldenData = "hello\n"
 
 const goldenED25519Key = "ssh-ed25519 " +
@@ -70,6 +72,60 @@ CcV2IjKuxQdRK5qXdvbHOGNg==
 -----END SSH SIGNATURE-----
 `
 
+// Security-key vectors, from a FIDO authenticator via ssh-keygen. Their
+// flags and counter are what real hardware emitted, which no software
+// reconstruction of PROTOCOL.u2f can vouch for.
+const goldenSKED25519Key = "sk-ssh-ed25519@openssh.com " +
+	"AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIP06KgHs0lgFvL0kYb+QW+ESP9kSbEgkCIJfxvU+z2hMAAAABHNzaDo="
+
+const goldenSKED25519 = `-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAAEoAAAAac2stc3NoLWVkMjU1MTlAb3BlbnNzaC5jb20AAAAg/ToqAe
+zSWAW8vSRhv5Bb4RI/2RJsSCQIgl/G9T7PaEwAAAAEc3NoOgAAAARmaWxlAAAAAAAAAAZz
+aGE1MTIAAABnAAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAQJs+G1okDsoJer
+quxzNgIYQcxIYrm3LSl1EXXKJNoAltnWNCeLTsnMPxZgqgbtN4UkhIwvzAK+0iVaTbiamp
+IgoBAAAABQ==
+-----END SSH SIGNATURE-----
+`
+
+const goldenSKECDSAKey = "sk-ecdsa-sha2-nistp256@openssh.com " +
+	"AAAAInNrLWVjZHNhLXNoYTItbmlzdHAyNTZAb3BlbnNzaC5jb20AAAAIbmlzdHAyNTYAAABBBKOuREYRSHdnliD20P1okArnAknOMVctI6csc/QP4BfVCua8KaRnHB1n109wJC9tIMTgpbmEcUuCM3RYXMqyaWIAAAAEc3NoOg=="
+
+const goldenSKECDSA = `-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAAH8AAAAic2stZWNkc2Etc2hhMi1uaXN0cDI1NkBvcGVuc3NoLmNvbQ
+AAAAhuaXN0cDI1NgAAAEEEo65ERhFId2eWIPbQ/WiQCucCSc4xVy0jpyxz9A/gF9UK5rwp
+pGccHWfXT3AkL20gxOCluYRxS4IzdFhcyrJpYgAAAARzc2g6AAAABGZpbGUAAAAAAAAABn
+NoYTUxMgAAAHkAAAAic2stZWNkc2Etc2hhMi1uaXN0cDI1NkBvcGVuc3NoLmNvbQAAAEoA
+AAAhAOjcxOhO9vNv3/WK6+RWMDcSPritCAw/BW/5fTVCg8zqAAAAIQCFPAEbad+cBDvanv
+2YKZgZ+B7+KLXRta1SV0FPRXGaUgEAAAAM
+-----END SSH SIGNATURE-----
+`
+
+// The same authenticator with -O verify-required, which sets user
+// verification, and with -O no-touch-required, which clears user presence.
+const goldenSKVerifiedKey = "sk-ssh-ed25519@openssh.com " +
+	"AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIEGEkdGc3K66P+0r51/OZbYup3TUXIv0E3ndo3lunBIYAAAABHNzaDo="
+
+const goldenSKVerified = `-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAAEoAAAAac2stc3NoLWVkMjU1MTlAb3BlbnNzaC5jb20AAAAgQYSR0Z
+zcrro/7SvnX85lti6ndNRci/QTed2jeW6cEhgAAAAEc3NoOgAAAARmaWxlAAAAAAAAAAZz
+aGE1MTIAAABnAAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAQHokh8iKa9Kg5e
+Y5ATRFEmafGGcAIP73iEVG1oBpCOmXY2ydEexu0nKP89JJ8q2d93r9RhymmXMF+6+aFiGN
+xAkFAAAADQ==
+-----END SSH SIGNATURE-----
+`
+
+const goldenSKNoTouchKey = "sk-ssh-ed25519@openssh.com " +
+	"AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIKZmHo3e5KOcW8CKLDoBDQ1z456vmsUM7FTuOnuC3PoqAAAABHNzaDo="
+
+const goldenSKNoTouch = `-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAAEoAAAAac2stc3NoLWVkMjU1MTlAb3BlbnNzaC5jb20AAAAgpmYejd
+7ko5xbwIosOgENDXPjnq+axQzsVO46e4Lc+ioAAAAEc3NoOgAAAARmaWxlAAAAAAAAAAZz
+aGE1MTIAAABnAAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAQOMkSyJR9CZW0y
+lYaFdVQDkTqNCL+CYkHdnUxTR4AIna0/VtEsIOMG7RZkmOaZzVCGFTB0SA6MvDG9B0q3Er
+NQgAAAAADA==
+-----END SSH SIGNATURE-----
+`
+
 // goldenBlob strips the armor of a vector without going through the code under
 // test.
 func goldenBlob(t *testing.T, armored string) []byte {
@@ -106,6 +162,30 @@ func TestParseSignatureOpenSSHVectors(t *testing.T) {
 			keyLine:   goldenRSAKey,
 			hash:      HashSHA512,
 			sigFormat: ssh.KeyAlgoRSASHA512,
+		},
+		"security key ed25519": {
+			armored:   goldenSKED25519,
+			keyLine:   goldenSKED25519Key,
+			hash:      HashSHA512,
+			sigFormat: ssh.KeyAlgoSKED25519,
+		},
+		"security key ecdsa": {
+			armored:   goldenSKECDSA,
+			keyLine:   goldenSKECDSAKey,
+			hash:      HashSHA512,
+			sigFormat: ssh.KeyAlgoSKECDSA256,
+		},
+		"security key verify-required": {
+			armored:   goldenSKVerified,
+			keyLine:   goldenSKVerifiedKey,
+			hash:      HashSHA512,
+			sigFormat: ssh.KeyAlgoSKED25519,
+		},
+		"security key no-touch-required": {
+			armored:   goldenSKNoTouch,
+			keyLine:   goldenSKNoTouchKey,
+			hash:      HashSHA512,
+			sigFormat: ssh.KeyAlgoSKED25519,
 		},
 	}
 
@@ -687,6 +767,168 @@ func TestVerifyRejectsWhatParsingRejects(t *testing.T) {
 			if err := Verify(strings.NewReader("data\n"), sig); err == nil ||
 				!strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("Verify() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// newSKSignature builds a security-key signature the way an authenticator
+// would, so the SK paths can be covered without one attached.
+func newSKSignature(t *testing.T, message string, flags byte, counter uint32) *Signature {
+	t.Helper()
+	const application, namespace = "ssh:", "file"
+
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	pk, err := ssh.ParsePublicKey(ssh.Marshal(struct {
+		Name        string
+		PubKey      []byte
+		Application string
+	}{ssh.KeyAlgoSKED25519, publicKey, application}))
+	if err != nil {
+		t.Fatalf("parsing security key: %v", err)
+	}
+
+	digest := sha512.Sum512([]byte(message))
+	applicationDigest := sha256.Sum256([]byte(application))
+	dataDigest := sha256.Sum256(signedData(namespace, HashSHA512, digest[:]))
+	// What the authenticator signs, per OpenSSH's PROTOCOL.u2f.
+	signed := ssh.Marshal(struct {
+		ApplicationDigest []byte `ssh:"rest"`
+		Flags             byte
+		Counter           uint32
+		MessageDigest     []byte `ssh:"rest"`
+	}{applicationDigest[:], flags, counter, dataDigest[:]})
+
+	return &Signature{
+		Version:       sigVersion,
+		PublicKey:     pk,
+		Namespace:     namespace,
+		HashAlgorithm: HashSHA512,
+		Signature: &ssh.Signature{
+			Format: ssh.KeyAlgoSKED25519,
+			Blob: ssh.Marshal(struct {
+				Signature []byte `ssh:"rest"`
+			}{ed25519.Sign(privateKey, signed)}),
+			Rest: ssh.Marshal(SecurityKeyFields{Flags: flags, Counter: counter}),
+		},
+	}
+}
+
+func TestSecurityKeyFields(t *testing.T) {
+	const data = "data\n"
+	sig := newSKSignature(t, data, 0x01, 42)
+	if err := Verify(strings.NewReader(data), sig); err != nil {
+		t.Fatalf("Verify() error = %v, want a usable signature", err)
+	}
+
+	// The fields survive a round trip through the signature file.
+	read, err := SignatureRead(strings.NewReader(string(Armor(sig))))
+	if err != nil {
+		t.Fatalf("SignatureRead() error = %v", err)
+	}
+	fields, err := read.SecurityKeyFields()
+	if err != nil {
+		t.Fatalf("SecurityKeyFields() error = %v", err)
+	}
+	if fields == nil {
+		t.Fatal("SecurityKeyFields() = nil, want the fields of a security key")
+	}
+	if fields.Flags != 0x01 || fields.Counter != 42 {
+		t.Errorf("SecurityKeyFields() = %+v, want {Flags:1 Counter:42}", *fields)
+	}
+}
+
+// ssh-keygen also rejects missing, truncated, or extra security-key fields.
+func TestParseSignatureRejectsMalformedSecurityKeyFields(t *testing.T) {
+	for name, rest := range map[string][]byte{
+		"empty":          nil,
+		"truncated":      {0x01, 0x00},
+		"trailing bytes": {0x01, 0x00, 0x00, 0x00, 0x05, 0xff},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sig := newSKSignature(t, goldenData, 0x01, 5)
+			sig.Signature.Rest = rest
+
+			parsed, err := ParseSignature(Marshal(sig))
+			if err == nil {
+				t.Fatalf("ParseSignature() = %+v, want a rejected signature", parsed)
+			}
+			if !strings.Contains(err.Error(), "security key fields") {
+				t.Errorf("ParseSignature() error = %v, want the fields reported", err)
+			}
+		})
+	}
+}
+
+// The vectors pin the fields to what a FIDO authenticator emitted, so this
+// does not rest on newSKSignature's reconstruction of the wire format.
+func TestSecurityKeyFieldsFromOpenSSHVectors(t *testing.T) {
+	tests := map[string]struct {
+		armored string
+		flags   byte
+		counter uint32
+	}{
+		"ed25519":           {armored: goldenSKED25519, flags: 0x01, counter: 5},
+		"ecdsa":             {armored: goldenSKECDSA, flags: 0x01, counter: 12},
+		"verify-required":   {armored: goldenSKVerified, flags: 0x05, counter: 13},
+		"no-touch-required": {armored: goldenSKNoTouch, flags: 0x00, counter: 12},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			sig, err := ParseSignature(goldenBlob(t, tt.armored))
+			if err != nil {
+				t.Fatalf("ParseSignature() error = %v", err)
+			}
+			fields, err := sig.SecurityKeyFields()
+			if err != nil {
+				t.Fatalf("SecurityKeyFields() error = %v", err)
+			}
+			if fields == nil {
+				t.Fatal("SecurityKeyFields() = nil, want the fields of a security key")
+			}
+			if fields.Flags != tt.flags || fields.Counter != tt.counter {
+				t.Errorf("SecurityKeyFields() = %+v, want {Flags:%d Counter:%d}",
+					*fields, tt.flags, tt.counter)
+			}
+		})
+	}
+}
+
+func TestSecurityKeyFieldsAreAbsentForPlainKeys(t *testing.T) {
+	sig, err := Sign(strings.NewReader("data\n"), newSigner(t), HashSHA512, "file")
+	if err != nil {
+		t.Fatalf("Sign() error = %v", err)
+	}
+	fields, err := sig.SecurityKeyFields()
+	if err != nil {
+		t.Fatalf("SecurityKeyFields() error = %v, want nil", err)
+	}
+	if fields != nil {
+		t.Errorf("SecurityKeyFields() = %+v, want nil for an ed25519 signature", *fields)
+	}
+}
+
+// A signature claiming to be from a security key must not yield fields that
+// were never there, whatever it carries.
+func TestSecurityKeyFieldsRejectsMalformedRest(t *testing.T) {
+	for name, rest := range map[string][]byte{
+		"empty":          nil,
+		"truncated":      {0x01, 0x00},
+		"trailing bytes": {0x01, 0x00, 0x00, 0x00, 0x2a, 0xff},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sig := newSKSignature(t, "data\n", 0x01, 42)
+			sig.Signature.Rest = rest
+			fields, err := sig.SecurityKeyFields()
+			if err == nil {
+				t.Fatalf("SecurityKeyFields() = %+v, want an error", fields)
+			}
+			if fields != nil {
+				t.Errorf("SecurityKeyFields() = %+v, want nil alongside the error", *fields)
 			}
 		})
 	}

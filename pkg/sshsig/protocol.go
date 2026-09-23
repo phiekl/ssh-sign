@@ -236,10 +236,14 @@ func validateStructure(sig *Signature) error {
 		)
 	}
 	// Unmarshal collects whatever follows the signature in Rest. Only a
-	// security key puts anything there, its flags and counter; for every other
-	// algorithm those bytes are unsigned padding that ssh-keygen refuses,
-	// which would otherwise make a verified signature file malleable.
-	if len(sig.Signature.Rest) != 0 && !isSecurityKey(publicKeyType(sig.PublicKey)) {
+	// security key puts anything there, its flags and counter, which its
+	// signature covers. For every other algorithm those bytes are unsigned
+	// padding that ssh-keygen refuses, which would otherwise make a verified
+	// signature file malleable.
+	switch fields, err := sig.SecurityKeyFields(); {
+	case err != nil:
+		return err
+	case fields == nil && len(sig.Signature.Rest) != 0:
 		return fmt.Errorf(
 			"signature contains %d bytes of trailing data", len(sig.Signature.Rest),
 		)
@@ -258,6 +262,33 @@ func validateStructure(sig *Signature) error {
 		return err
 	}
 	return validateSignatureFormat(sig.PublicKey, sig.Signature.Format)
+}
+
+// SecurityKeyFields is what a FIDO authenticator adds after the signature.
+type SecurityKeyFields struct {
+	// Flags are the authenticator flags, bit 0 being user presence and bit 2
+	// user verification. A key enrolled with no-touch-required clears bit 0,
+	// so an unset bit is not itself suspicious. They are covered by the
+	// signature and cannot be altered afterwards, but they are not evidence
+	// that a touch happened: whoever holds the key chooses them when signing.
+	Flags byte
+	// Counter is the authenticator's signature counter. It exists so that a
+	// key copied out of its hardware can be spotted across signatures.
+	Counter uint32
+}
+
+// SecurityKeyFields returns the fields a security-key signature carries, or
+// nil for any other key type, which carries nothing there. An error means the
+// fields are malformed, which also makes the signature unverifiable.
+func (s *Signature) SecurityKeyFields() (*SecurityKeyFields, error) {
+	if s.Signature == nil || !isSecurityKey(publicKeyType(s.PublicKey)) {
+		return nil, nil
+	}
+	var fields SecurityKeyFields
+	if err := ssh.Unmarshal(s.Signature.Rest, &fields); err != nil {
+		return nil, fmt.Errorf("invalid security key fields: %w", boundedError(err))
+	}
+	return &fields, nil
 }
 
 // isSecurityKey reports whether the key type is a FIDO authenticator key,

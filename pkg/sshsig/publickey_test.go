@@ -5,6 +5,7 @@
 package sshsig
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -112,6 +113,60 @@ func TestNewPublicKeyInfo(t *testing.T) {
 	}
 	if !strings.HasPrefix(info.Fingerprint, "SHA256:") {
 		t.Errorf("Fingerprint = %q, want a SHA256: prefix", info.Fingerprint)
+	}
+	if info.Application != nil {
+		t.Errorf("Application = %q, want no application for a plain key", *info.Application)
+	}
+}
+
+func TestNewPublicKeyInfoSecurityKeyApplication(t *testing.T) {
+	for name, keyLine := range map[string]string{
+		"ed25519": goldenSKED25519Key,
+		"ecdsa":   goldenSKECDSAKey,
+	} {
+		t.Run(name, func(t *testing.T) {
+			pk, err := ParsePublicKeyLine(keyLine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info := NewPublicKeyInfo(pk)
+			if info.Application == nil || *info.Application != "ssh:" {
+				t.Errorf("Application = %v, want ssh:", info.Application)
+			}
+		})
+	}
+
+	pk, err := ParsePublicKeyLine(goldenSKED25519Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Name        string
+		Key         []byte
+		Application string
+	}
+	if err := ssh.Unmarshal(pk.Marshal(), &wire); err != nil {
+		t.Fatal(err)
+	}
+	wire.Application = "ssh:custom"
+	custom, err := ssh.ParsePublicKey(ssh.Marshal(wire))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app := NewPublicKeyInfo(custom).Application; app == nil || *app != wire.Application {
+		t.Errorf("custom application = %v, want %q", app, wire.Application)
+	}
+
+	cert := &ssh.Certificate{
+		Key:         custom,
+		CertType:    ssh.UserCert,
+		ValidBefore: ssh.CertTimeInfinity,
+	}
+	if err := cert.SignCert(rand.Reader, newSigner(t)); err != nil {
+		t.Fatal(err)
+	}
+	if app := NewPublicKeyInfo(cert).Application; app == nil || *app != wire.Application {
+		t.Errorf("certificate application = %v, want %q", app, wire.Application)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"encoding/pem"
 	"strings"
 	"testing"
@@ -327,5 +328,90 @@ func TestSignatureCreateRejectsANilSigner(t *testing.T) {
 	_, err := SignatureCreate(nil, "file", strings.NewReader("data\n"))
 	if err == nil || !strings.Contains(err.Error(), "a signer is required") {
 		t.Fatalf("SignatureCreate() error = %v, want a rejected signer", err)
+	}
+}
+
+func TestNewSecurityKeyInfo(t *testing.T) {
+	got := newSecurityKeyInfo(&SecurityKeyFields{Flags: 0x19, Counter: 7})
+	want := SecurityKeyInfo{
+		Flags:          "0x19",
+		UserPresence:   true,
+		BackupEligible: true,
+		BackedUp:       true,
+		Counter:        7,
+	}
+	if *got != want {
+		t.Errorf("newSecurityKeyInfo() = %+v, want %+v", *got, want)
+	}
+}
+
+func TestSecurityKeyInfoFlagsTextAfterJSONRoundTrip(t *testing.T) {
+	for _, flags := range []byte{0x02, 0x03, 0x18} {
+		original := newSecurityKeyInfo(&SecurityKeyFields{Flags: flags})
+		encoded, err := json.Marshal(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded SecurityKeyInfo
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := decoded.FlagsText(), original.FlagsText(); got != want {
+			t.Errorf("flags 0x%02x: FlagsText() after JSON round trip = %q, want %q", flags, got, want)
+		}
+	}
+}
+
+func TestSecurityKeyInfoFlagsTextUsesFlags(t *testing.T) {
+	info := SecurityKeyInfo{Flags: "0x00", UserPresence: true}
+	if got := info.FlagsText(); got != "0x00 (none)" {
+		t.Errorf("FlagsText() = %q, want labels from Flags", got)
+	}
+}
+
+func TestSecurityKeyInfoFlagsText(t *testing.T) {
+	for name, tt := range map[string]struct {
+		flags byte
+		want  string
+	}{
+		"presence": {
+			flags: 0x01,
+			want:  "0x01 (presence)",
+		},
+		"presence and verification": {
+			flags: 0x05,
+			want:  "0x05 (presence,user-verified)",
+		},
+		"no-touch-required": {
+			flags: 0x00,
+			want:  "0x00 (none)",
+		},
+		"backup eligibility without presence": {
+			flags: 0x08,
+			want:  "0x08 (backup-eligible)",
+		},
+		"backup flags": {
+			flags: 0x18,
+			want:  "0x18 (backup-eligible,backed-up)",
+		},
+		"presence and backup eligibility": {
+			flags: 0x09,
+			want:  "0x09 (presence,backup-eligible)",
+		},
+		"other bit without presence": {
+			flags: 0x02,
+			want:  "0x02 (other-bits)",
+		},
+		"other bit with presence": {
+			flags: 0x03,
+			want:  "0x03 (presence,other-bits)",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			info := newSecurityKeyInfo(&SecurityKeyFields{Flags: tt.flags})
+			if got := info.FlagsText(); got != tt.want {
+				t.Errorf("FlagsText() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
