@@ -6,18 +6,16 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
-	"pxy.se/go/argparse"
-	"pxy.se/go/ssh-sign/internal/global"
+	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
 type VerifyCommand struct {
-	argparse.BaseCommand
-	GlobalOpts  *global.GlobalOpts
 	commandOpts flow.VerifyOpts
 
 	allowedSignersFile string
@@ -26,8 +24,7 @@ type VerifyCommand struct {
 	verifyFile         string
 }
 
-func (c *VerifyCommand) Command() (any, []error) {
-	log := commandLog(c.GlobalOpts)
+func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	c.commandOpts.Log = log
 
 	if c.timestamp != "" {
@@ -86,53 +83,53 @@ func (c *VerifyCommand) Command() (any, []error) {
 	return flow.Verify(&c.commandOpts)
 }
 
-func (c *VerifyCommand) Args() {
-	c.ArgP.StringVarP(
+func (c *VerifyCommand) Flags(s *args.Set) {
+	s.String(
 		&c.allowedSignersFile,
 		"allowed-signers-file", "a", "",
 		"read allowed signers, with options, from file (required)",
 	)
-	c.ArgP.Required("allowed-signers-file")
-	c.ArgP.StringDenyEmpty(&c.allowedSignersFile, "allowed-signers-file")
+	s.Required("allowed-signers-file")
+	s.DenyEmpty("allowed-signers-file")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.verifyFile,
 		"verify-file", "f", "",
 		"read data to verify from file (required)",
 	)
-	c.ArgP.Required("verify-file")
-	c.ArgP.StringDenyEmpty(&c.verifyFile, "verify-file")
+	s.Required("verify-file")
+	s.DenyEmpty("verify-file")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.signatureFile,
 		"signature-file", "s", "",
 		"read signature from file instead of stdin",
 	)
-	c.ArgP.StringDenyEmpty(&c.signatureFile, "signature-file")
+	s.DenyEmpty("signature-file")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.commandOpts.Namespace,
 		"namespace", "n", "",
 		"require a signature with specified namespace",
 	)
-	c.ArgP.BoolVarP(
+	s.Bool(
 		&c.commandOpts.NoNamespace,
-		"no-namespace", "N", false,
+		"no-namespace", "N",
 		"ignore the signature namespace and allowed signers namespace restrictions",
 	)
-	c.ArgP.MutuallyExclusive("namespace", "no-namespace")
+	s.MutuallyExclusive("namespace", "no-namespace")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.commandOpts.Principal,
 		"principal", "p", "",
 		"allow this signer (email usually) from allowed signers file",
 	)
-	c.ArgP.StringDenyEmpty(&c.commandOpts.Principal, "principal")
+	s.DenyEmpty("principal")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.timestamp,
 		"timestamp", "t", "",
 		"validate this RFC3339/RFC1123 timestamp rather than current time",
 	)
-	c.ArgP.StringDenyEmpty(&c.timestamp, "timestamp")
+	s.DenyEmpty("timestamp")
 }

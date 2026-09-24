@@ -7,20 +7,20 @@ package cmd
 import (
 	"testing"
 
-	"pxy.se/go/argparse"
+	"pxy.se/go/ssh-sign/internal/args"
 )
 
 func TestCheckRejectsExplicitlyEmptySignatureFile(t *testing.T) {
 	command := CheckCommand{}
-	command.ArgP = argparse.NewArgParser("ssh-sign check")
-	command.Args()
+	s := args.NewSet("ssh-sign check")
+	command.Flags(s)
 
-	err := command.ArgP.ParseArgs([]string{"-f", "data", "-s", "", "-K", "-N"})
+	err := s.Parse([]string{"-f", "data", "-s", "", "-K", "-N"})
 	if err == nil {
-		t.Fatal("ParseArgs() unexpectedly accepted an empty signature file")
+		t.Fatal("Parse() unexpectedly accepted an empty signature file")
 	}
 	want := "flag/argument is empty: signature-file"
 	if err.Error() != want {
-		t.Errorf("ParseArgs() error = %q, want %q", err, want)
+		t.Errorf("Parse() error = %q, want %q", err, want)
 	}
 }

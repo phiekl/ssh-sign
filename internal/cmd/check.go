@@ -6,18 +6,16 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
-	"pxy.se/go/argparse"
-	"pxy.se/go/ssh-sign/internal/global"
+	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
 type CheckCommand struct {
-	argparse.BaseCommand
-	GlobalOpts  *global.GlobalOpts
 	commandOpts flow.CheckOpts
 
 	signatureFile string
@@ -25,8 +23,7 @@ type CheckCommand struct {
 	verifyFile    string
 }
 
-func (c *CheckCommand) Command() (any, []error) {
-	log := commandLog(c.GlobalOpts)
+func (c *CheckCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	c.commandOpts.Log = log
 
 	if c.commandOpts.NoNamespace {
@@ -93,50 +90,50 @@ func (c *CheckCommand) Command() (any, []error) {
 	return flow.Check(&c.commandOpts)
 }
 
-func (c *CheckCommand) Args() {
-	c.ArgP.StringVarP(
+func (c *CheckCommand) Flags(s *args.Set) {
+	s.String(
 		&c.verifyFile,
 		"verify-file", "f", "",
 		"read data to verify from file (required)",
 	)
-	c.ArgP.Required("verify-file")
-	c.ArgP.StringDenyEmpty(&c.verifyFile, "verify-file")
+	s.Required("verify-file")
+	s.DenyEmpty("verify-file")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.signatureFile,
 		"signature-file", "s", "",
 		"read signature from file instead of stdin",
 	)
-	c.ArgP.StringDenyEmpty(&c.signatureFile, "signature-file")
+	s.DenyEmpty("signature-file")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.commandOpts.Namespace,
 		"namespace", "n", "file",
 		"require a signature with specified namespace",
 	)
-	c.ArgP.BoolVarP(
+	s.Bool(
 		&c.commandOpts.NoNamespace,
-		"no-namespace", "N", false,
+		"no-namespace", "N",
 		"accept a signature with any namespace",
 	)
-	c.ArgP.MutuallyExclusive("namespace", "no-namespace")
+	s.MutuallyExclusive("namespace", "no-namespace")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.commandOpts.AuthKey,
 		"auth-key", "k", "",
 		"require a signature created by specified public key",
 	)
-	c.ArgP.BoolVarP(
+	s.Bool(
 		&c.commandOpts.NoAuthKey,
-		"no-auth-key", "K", false,
+		"no-auth-key", "K",
 		"accept a signature created by any public key",
 	)
-	c.ArgP.MutuallyExclusive("auth-key", "no-auth-key")
+	s.MutuallyExclusive("auth-key", "no-auth-key")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.timestamp,
 		"timestamp", "t", "",
 		"validate this RFC3339/RFC1123 timestamp rather than current time",
 	)
-	c.ArgP.StringDenyEmpty(&c.timestamp, "timestamp")
+	s.DenyEmpty("timestamp")
 }

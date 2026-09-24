@@ -6,10 +6,10 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
-	"pxy.se/go/argparse"
-	"pxy.se/go/ssh-sign/internal/global"
+	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
@@ -17,16 +17,13 @@ import (
 )
 
 type SignCommand struct {
-	argparse.BaseCommand
-	GlobalOpts  *global.GlobalOpts
 	commandOpts flow.SignOpts
 
 	dataFile string
 	signKey  string
 }
 
-func (c *SignCommand) Command() (any, []error) {
-	log := commandLog(c.GlobalOpts)
+func (c *SignCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	c.commandOpts.Log = log
 
 	pk, err := sshsig.ParsePublicKeyLine(c.signKey)
@@ -75,26 +72,26 @@ func (c *SignCommand) Command() (any, []error) {
 	return res, nil
 }
 
-func (c *SignCommand) Args() {
-	c.ArgP.StringVarP(
+func (c *SignCommand) Flags(s *args.Set) {
+	s.String(
 		&c.dataFile,
 		"data-file", "f", "",
 		"read data to sign from file instead of stdin",
 	)
-	c.ArgP.StringDenyEmpty(&c.dataFile, "data-file")
+	s.DenyEmpty("data-file")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.commandOpts.Namespace,
 		"namespace", "n", "file",
 		"create signature with specified namespace",
 	)
-	c.ArgP.StringDenyEmpty(&c.commandOpts.Namespace, "namespace")
+	s.DenyEmpty("namespace")
 
-	c.ArgP.StringVarP(
+	s.String(
 		&c.signKey,
 		"sign-key", "k", "",
 		"create signature using this pubkey reference (must exist in ssh-agent)",
 	)
-	c.ArgP.Required("sign-key")
-	c.ArgP.StringDenyEmpty(&c.signKey, "sign-key")
+	s.Required("sign-key")
+	s.DenyEmpty("sign-key")
 }

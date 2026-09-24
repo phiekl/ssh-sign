@@ -32,7 +32,7 @@ Blank lines are ignored. So are lines that start with `#` after any leading
 spaces or tabs.
 
 Malformed entries are skipped, so later entries can still match. Run
-`ssh-sign -v verify` to see the recorded errors. Read failures and lines over
+`ssh-sign verify -v` to see the recorded errors. Read failures and lines over
 the [size limit](#limits) stop verification.
 
 ### Example
@@ -211,5 +211,5 @@ lines while preserving ordinary Unicode identities and namespaces.
 
 A line may be up to 4 MiB. A longer line stops verification.
 
-Errors are recorded for the first 64 skipped lines. Use `ssh-sign -v verify` to
-see them, or `ssh-sign -vv verify` to also see the total number skipped.
+Errors are recorded for the first 64 skipped lines. Use `ssh-sign verify -v` to
+see them, or `ssh-sign verify -vv` to also see the total number skipped.

@@ -82,18 +82,20 @@ matching `namespaces=` restriction instead makes it `valid`.
 
 ```
 $ ssh-sign --help
-usage: ssh-sign [option].. <command> [command option]..
+usage: ssh-sign <command> [command option]..
 
 commands:
   inspect   Show signature details
   sign      Sign data with specified public key and namespace
   verify    Verify signed data using allowed signers files
   check     Check signed data, with optional public key/namespace validation
+```
 
-options:
-  -h, --help            display this help text and exit
-  -j, --json            enable JSON output
-  -v, --verbose count   write debug output to stderr, repeatable up to -vvv
+Every command also accepts:
+
+```
+  -j, --json      enable JSON output
+  -v, --verbose   write debug output to stderr, repeatable up to -vvv
 ```
 
 
@@ -108,7 +110,7 @@ options:
 | `-vvv` | every allowed signers entry with its constraints, and every key the agent offers |
 
 ```
-$ ssh-sign -vv sign -k "$(cat key.pub)" -f data > data.sig
+$ ssh-sign sign -vv -k "$(cat key.pub)" -f data > data.sig
 debug1: running command command=sign json=false
 debug2: reading input role=data path=data
 debug1: sign: signing namespace=file key.type=ssh-ed25519 key.fingerprint=SHA256:LyEOd2jBAC/rJ6fwD0FVOBJTLJsKorRx5bjfBeZ0FM8
@@ -132,9 +134,9 @@ debug1: sign: signed format=ssh-ed25519 hash=sha512
 
 #### Options
 ```
-  -f, --data-file string   read data to sign from file instead of stdin
-  -n, --namespace string   create signature with specified namespace (default "file")
-  -k, --sign-key string    create signature using this pubkey reference (must exist in ssh-agent)
+  -f, --data-file   read data to sign from file instead of stdin
+  -n, --namespace   create signature with specified namespace (default "file")
+  -k, --sign-key    create signature using this pubkey reference (must exist in ssh-agent)
 ```
 
 #### Example
@@ -178,7 +180,7 @@ ErHRKw6biwpo2ZeYpEvmFQAxqn5iFWczak8drGAM
 
 #### Options
 ```
-  -s, --signature-file string   read signature from file instead of stdin
+  -s, --signature-file   read signature from file instead of stdin
 ```
 
 `inspect`, `check`, and `verify` accept trailing ASCII whitespace in
@@ -203,7 +205,7 @@ $ ssh-sign inspect < data.sig
  signature_blob        | uCCNMOazi9nGgQd95d+PNrGxu3wpHxuch1gBTZfoUUy1cxKx0SsOm4sKaNmXmKRL5hUAMap+YhVnM2pPHaxgDA==
 ```
 
-Alternatively with JSON output via e.g. `ssh-sign -j inspect -s data.sig`:
+Alternatively with JSON output via e.g. `ssh-sign inspect -j -s data.sig`:
 ```json
 {
   "result": {
@@ -253,13 +255,13 @@ is still visible. JSON reports `flags`, `user_presence`, `user_verification`,
 #### Options
 
 ```
-  -f, --verify-file string      read data to verify from file (required)
-  -s, --signature-file string   read signature from file instead of stdin
-  -n, --namespace string        require a signature with specified namespace (default "file")
-  -N, --no-namespace            accept a signature with any namespace
-  -k, --auth-key string         require a signature created by specified public key
-  -K, --no-auth-key             accept a signature created by any public key
-  -t, --timestamp string        validate this RFC3339/RFC1123 timestamp rather than current time
+  -f, --verify-file      read data to verify from file (required)
+  -s, --signature-file   read signature from file instead of stdin
+  -n, --namespace        require a signature with specified namespace (default "file")
+  -N, --no-namespace     accept a signature with any namespace
+  -k, --auth-key         require a signature created by specified public key
+  -K, --no-auth-key      accept a signature created by any public key
+  -t, --timestamp        validate this RFC3339/RFC1123 timestamp rather than current time
 ```
 
 > [!NOTE]
@@ -308,13 +310,13 @@ Enabling JSON output for the last one gives:
 
 #### Options
 ```
-  -a, --allowed-signers-file string   read allowed signers, with options, from file (required)
-  -f, --verify-file string            read data to verify from file (required)
-  -s, --signature-file string         read signature from file instead of stdin
-  -n, --namespace string              require a signature with specified namespace
-  -N, --no-namespace                  ignore the signature namespace and allowed signers namespace restrictions
-  -p, --principal string              allow this signer (email usually) from allowed signers file
-  -t, --timestamp string              validate this RFC3339/RFC1123 timestamp rather than current time
+  -a, --allowed-signers-file   read allowed signers, with options, from file (required)
+  -f, --verify-file            read data to verify from file (required)
+  -s, --signature-file         read signature from file instead of stdin
+  -n, --namespace              require a signature with specified namespace
+  -N, --no-namespace           ignore the signature namespace and allowed signers namespace restrictions
+  -p, --principal              allow this signer (email usually) from allowed signers file
+  -t, --timestamp              validate this RFC3339/RFC1123 timestamp rather than current time
 ```
 
 > [!IMPORTANT]

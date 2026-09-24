@@ -6,24 +6,21 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
-	"pxy.se/go/argparse"
-	"pxy.se/go/ssh-sign/internal/global"
+	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/flow"
 )
 
 type InspectCommand struct {
-	argparse.BaseCommand
-	GlobalOpts  *global.GlobalOpts
 	commandOpts flow.InspectOpts
 
 	signatureFile string
 }
 
-func (c *InspectCommand) Command() (any, []error) {
-	log := commandLog(c.GlobalOpts)
+func (c *InspectCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	c.commandOpts.Log = log
 
 	if c.signatureFile == "" {
@@ -52,11 +49,11 @@ func (c *InspectCommand) Command() (any, []error) {
 	return res, nil
 }
 
-func (c *InspectCommand) Args() {
-	c.ArgP.StringVarP(
+func (c *InspectCommand) Flags(s *args.Set) {
+	s.String(
 		&c.signatureFile,
 		"signature-file", "s", "",
 		"read signature from file instead of stdin",
 	)
-	c.ArgP.StringDenyEmpty(&c.signatureFile, "signature-file")
+	s.DenyEmpty("signature-file")
 }

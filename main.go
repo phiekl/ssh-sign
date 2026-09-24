@@ -10,97 +10,68 @@ import (
 	"io"
 	"os"
 
-	"pxy.se/go/argparse"
+	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/cmd"
-	"pxy.se/go/ssh-sign/internal/global"
 	"pxy.se/go/ssh-sign/pkg/cli"
 )
 
+var commands = []struct {
+	name, description string
+	command           cmd.Command
+}{
+	{"inspect", "Show signature details", &cmd.InspectCommand{}},
+	{"sign", "Sign data with specified public key and namespace", &cmd.SignCommand{}},
+	{"verify", "Verify signed data using allowed signers files", &cmd.VerifyCommand{}},
+	{"check", "Check signed data, with optional public key/namespace validation", &cmd.CheckCommand{}},
+}
+
 func main() {
-	opts := global.GlobalOpts{}
-	p := argparse.NewArgParser("ssh-sign")
-
-	p.BoolVarP(
-		&opts.JSON,
-		"json", "j", false,
-		"enable JSON output",
-	)
-
-	p.CountVarP(
-		&opts.Verbose,
-		"verbose", "v",
-		"write debug output to stderr, repeatable up to -vvv",
-	)
-
-	p.CommandInit(
-		&opts.Command,
-		&opts.CommandName,
-		&opts.CommandOpts,
-	)
-
-	p.Command(
-		"inspect",
-		"Show signature details",
-		&cmd.InspectCommand{GlobalOpts: &opts},
-	)
-
-	p.Command(
-		"sign",
-		"Sign data with specified public key and namespace",
-		&cmd.SignCommand{GlobalOpts: &opts},
-	)
-
-	p.Command(
-		"verify",
-		"Verify signed data using allowed signers files",
-		&cmd.VerifyCommand{GlobalOpts: &opts},
-	)
-
-	p.Command(
-		"check",
-		"Check signed data, with optional public key/namespace validation",
-		&cmd.CheckCommand{GlobalOpts: &opts},
-	)
-
-	if err := p.ParseCurrentArgs(); err != nil {
-		exitOnHelpOrUsage(err)
+	root := args.NewSet("ssh-sign")
+	for _, c := range commands {
+		root.Command(c.name, c.description)
+	}
+	name, argv, err := root.ParseCommand(os.Args[1:])
+	if err != nil {
+		exitOnHelpOrUsage(root, err)
 		dieUsage("usage", err)
 	}
-	// Keep debug output separate from results.
-	opts.Log = cli.NewLogger(os.Stderr, opts.Verbose)
-	cli.Debug(opts.Log, cli.LevelDebug1, "running command",
-		"command", opts.CommandName, "json", opts.JSON,
-	)
 
-	commandOpts := opts.CommandOpts
-	if len(commandOpts) == 0 {
-		// argparse displays help before validating required flags when it gets
-		// no tokens. An option terminator lets normal validation report which
-		// command flags are missing instead.
-		commandOpts = []string{"--"}
-	}
-	if err := opts.Command.Run("ssh-sign "+opts.CommandName, commandOpts); err != nil {
-		exitOnHelpOrUsage(err)
-		if argparse.IsInternal(err) {
-			die(opts.CommandName, err)
+	var command cmd.Command
+	for _, c := range commands {
+		if c.name == name {
+			command = c.command
+			break
 		}
-		dieUsage(opts.CommandName, err)
 	}
-	res := opts.Command.Result()
+	flags := args.NewSet("ssh-sign " + name)
+	command.Flags(flags)
+	var jsonOutput bool
+	var verbose int
+	flags.Bool(&jsonOutput, "json", "j", "enable JSON output")
+	flags.Count(&verbose, "verbose", "v", "write debug output to stderr, repeatable up to -vvv")
+	if err := flags.Parse(argv); err != nil {
+		exitOnHelpOrUsage(flags, err)
+		dieUsage(name, err)
+	}
+
+	log := cli.NewLogger(os.Stderr, verbose)
+	cli.Debug(log, cli.LevelDebug1, "running command", "command", name, "json", jsonOutput)
+
+	res := cli.NewResult(command.Run(log))
 	for _, err := range res.Error {
 		if cli.IsUsageError(err) {
-			dieUsage(opts.CommandName, res.Error...)
+			dieUsage(name, res.Error...)
 		}
 	}
 
-	if opts.JSON {
+	if jsonOutput {
 		out, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
-			die(opts.CommandName, err)
+			die(name, err)
 		}
 		out = cli.EscapeJSONControls(out)
 		if err := writeOutput(os.Stdout, string(out)); err != nil {
-			die(opts.CommandName, fmt.Errorf("failed writing output: %w", err))
+			die(name, fmt.Errorf("failed writing output: %w", err))
 		}
 		if len(res.Error) > 0 {
 			os.Exit(1)
@@ -109,30 +80,37 @@ func main() {
 	}
 
 	if len(res.Error) > 0 {
-		die(opts.CommandName, res.Error...)
+		die(name, res.Error...)
 	}
 	if res.Data != nil {
-		if err := writeOutput(os.Stdout, fmt.Sprint(res.Data)); err != nil {
-			die(opts.CommandName, fmt.Errorf("failed writing output: %w", err))
+		if err := writeOutput(os.Stdout, res.Data.String()); err != nil {
+			die(name, fmt.Errorf("failed writing output: %w", err))
 		}
 	}
 	os.Exit(0)
 }
 
-// exitOnHelpOrUsage exits after the parser writes help or usage.
-// Match errors exactly: argparse wraps failed help writes, which the caller
-// must report. Other errors also return to the caller.
-func exitOnHelpOrUsage(err error) {
+// exitOnHelpOrUsage writes help to stdout for -h/--help and exits 0, or to
+// stderr when arguments are missing and exits 2. Other errors return.
+func exitOnHelpOrUsage(s *args.Set, err error) {
 	switch err {
-	case argparse.ErrHelp:
+	case args.ErrHelp:
+		if err := writeText(os.Stdout, s.Help()); err != nil {
+			die("usage", fmt.Errorf("failed writing help: %w", err))
+		}
 		os.Exit(0)
-	case argparse.ErrUsage:
+	case args.ErrUsage:
+		// Stderr may already be unavailable; keep the usage exit status.
+		_ = writeText(os.Stderr, s.Help())
 		os.Exit(2)
 	}
 }
 
 func writeOutput(w io.Writer, value string) error {
-	output := value + "\n"
+	return writeText(w, value+"\n")
+}
+
+func writeText(w io.Writer, output string) error {
 	n, err := io.WriteString(w, output)
 	if err != nil {
 		return err

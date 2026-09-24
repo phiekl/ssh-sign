@@ -276,7 +276,7 @@ func TestJSONFailureExitsNonZero(t *testing.T) {
 	}
 
 	stdout, stderr, code := run(t,
-		"-j", "verify", "-a", f.allowed, "-f", tampered, "-s", f.signature, "-n", "file",
+		"verify", "-j", "-a", f.allowed, "-f", tampered, "-s", f.signature, "-n", "file",
 	)
 	if code != 1 {
 		t.Fatalf("exit status = %d, want 1 (stderr: %s)", code, stderr)
@@ -290,7 +290,7 @@ func TestJSONExitStatusZeroOnSuccess(t *testing.T) {
 	f := newFixture(t, "file")
 
 	stdout, stderr, code := run(t,
-		"-j", "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
+		"verify", "-j", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
 	)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
@@ -356,7 +356,7 @@ func TestVerifyReportsAllowedSignersNamespaceAsValid(t *testing.T) {
 	f := newFixture(t, "file")
 	f.writeAllowed(t, f.principal+` namespaces="file" `+f.keyLine())
 
-	stdout, stderr, code := run(t, "-j", "verify",
+	stdout, stderr, code := run(t, "verify", "-j",
 		"-a", f.allowed, "-f", f.data, "-s", f.signature, "-p", f.principal,
 	)
 	if code != 0 {
@@ -388,7 +388,7 @@ func TestVerifyReportsRequestedPrincipalNotPattern(t *testing.T) {
 	f := newFixture(t, "file")
 	f.writeAllowed(t, "*@example.com "+f.keyLine())
 
-	stdout, stderr, code := run(t, "-j", "verify",
+	stdout, stderr, code := run(t, "verify", "-j",
 		"-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal,
 	)
 	if code != 0 {
@@ -425,7 +425,7 @@ func TestCommandsWithoutOptionsReportMissingFlags(t *testing.T) {
 			args := []string{tt.command}
 			if jsonMode {
 				name = "json"
-				args = []string{"-j", tt.command}
+				args = []string{tt.command, "-j"}
 			}
 			t.Run(tt.command+"/"+name, func(t *testing.T) {
 				stdout, stderr, code := run(t, args...)
@@ -488,7 +488,7 @@ func TestSemanticUsageErrorsExitTwo(t *testing.T) {
 			args := tt.args
 			if jsonMode {
 				name = "json"
-				args = append([]string{"-j"}, args...)
+				args = append([]string{args[0], "-j"}, args[1:]...)
 			}
 			t.Run(tt.name+"/"+name, func(t *testing.T) {
 				stdout, stderr, code := run(t, args...)
@@ -528,7 +528,7 @@ func TestVerifyReportsPartialResultOnFailure(t *testing.T) {
 		t.Fatalf("writing tampered data: %v", err)
 	}
 
-	stdout, stderr, code := run(t, "-j", "verify",
+	stdout, stderr, code := run(t, "verify", "-j",
 		"-a", f.allowed, "-f", tampered, "-s", f.signature, "-n", "git",
 	)
 	if code != 1 {
@@ -612,7 +612,7 @@ func TestErrorsCarryNoTerminalEscapes(t *testing.T) {
 				t.Errorf("stderr = %q, want no raw control characters", stderr)
 			}
 
-			stdout, _, code := run(t, "-j", "inspect", "-s", signature)
+			stdout, _, code := run(t, "inspect", "-j", "-s", signature)
 			if code == 0 {
 				t.Fatal("exit status = 0 for a crafted signature, want non-zero")
 			}
@@ -644,7 +644,7 @@ func TestResultsCarryNoTerminalEscapes(t *testing.T) {
 
 			for _, args := range [][]string{
 				{"inspect", "-s", f.signature},
-				{"-j", "inspect", "-s", f.signature},
+				{"inspect", "-j", "-s", f.signature},
 				{"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-N"},
 			} {
 				stdout, stderr, code := run(t, args...)
@@ -666,7 +666,7 @@ func TestInspectTextAndJSONAgreeOnFields(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
-	encoded, _, code := run(t, "-j", "inspect", "-s", f.signature)
+	encoded, _, code := run(t, "inspect", "-j", "-s", f.signature)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0", code)
 	}
@@ -706,7 +706,7 @@ func TestInspectShowsSecurityKeyFields(t *testing.T) {
 		}
 	}
 
-	encoded, _, code := run(t, "-j", "inspect", "-s", signature)
+	encoded, _, code := run(t, "inspect", "-j", "-s", signature)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0", code)
 	}
@@ -740,7 +740,7 @@ func TestInspectOmitsSecurityKeyFieldsForPlainKeys(t *testing.T) {
 		t.Errorf("stdout = %q, want no application row", stdout)
 	}
 
-	encoded, _, _ := run(t, "-j", "inspect", "-s", f.signature)
+	encoded, _, _ := run(t, "inspect", "-j", "-s", f.signature)
 	result := decodeJSON(t, encoded)["result"].(map[string]any)
 	if _, ok := result["public_key"].(map[string]any)["application"]; ok {
 		t.Errorf("JSON output %q holds application for an ed25519 key", encoded)
@@ -758,7 +758,7 @@ func TestOutputWriteFailureIsReported(t *testing.T) {
 		args := []string{"inspect", "-s", f.signature}
 		if jsonMode {
 			name = "json"
-			args = append([]string{"-j"}, args...)
+			args = append([]string{args[0], "-j"}, args[1:]...)
 		}
 		t.Run(name, func(t *testing.T) {
 			full, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
@@ -998,7 +998,7 @@ func TestLargeInputRoundTrip(t *testing.T) {
 func TestVerifyReportsPrincipalPinningAsDisabledWithoutAPrincipal(t *testing.T) {
 	f := newFixture(t, "file")
 
-	stdout, stderr, code := run(t, "-j", "verify",
+	stdout, stderr, code := run(t, "verify", "-j",
 		"-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
 	)
 	if code != 0 {
@@ -1169,8 +1169,8 @@ func TestArgumentErrorsAreReportedBeforeOpeningInputs(t *testing.T) {
 // Argument errors always use the ordinary stderr path.
 func TestArgumentErrorsIgnoreJSONFormat(t *testing.T) {
 	for _, args := range [][]string{
-		{"-j", "--bogus"},
-		{"--json", "--bogus"},
+		{"verify", "-j", "--bogus"},
+		{"verify", "--json", "--bogus"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			stdout, stderr, code := run(t, args...)
@@ -1193,7 +1193,7 @@ func TestArgumentErrorsIgnoreJSONFormat(t *testing.T) {
 func TestCheckDoesNotReuseTheNamespaceKey(t *testing.T) {
 	f := newFixture(t, "file")
 
-	stdout, _, _ := run(t, "-j", "check", "-f", f.data, "-s", f.signature, "-K", "-N")
+	stdout, _, _ := run(t, "check", "-j", "-f", f.data, "-s", f.signature, "-K", "-N")
 	result, ok := decodeJSON(t, stdout)["result"].(map[string]any)
 	if !ok {
 		t.Fatalf("output %q is missing the result key", stdout)
@@ -1207,12 +1207,35 @@ func TestCheckDoesNotReuseTheNamespaceKey(t *testing.T) {
 }
 
 func TestHelpListsTheVerboseFlag(t *testing.T) {
-	stdout, stderr, code := run(t, "--help")
+	stdout, stderr, code := run(t, "verify", "--help")
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
 	if !strings.Contains(stdout, "-v, --verbose") {
 		t.Errorf("help output is missing the verbose flag:\n%s", stdout)
+	}
+}
+
+func TestCommonOptionsAreRejectedBeforeTheCommand(t *testing.T) {
+	f := newFixture(t, "file")
+
+	for _, args := range [][]string{
+		{"-j", "inspect", "-s", f.signature},
+		{"-v", "inspect", "-s", f.signature},
+		{"--json", "inspect", "-s", f.signature},
+	} {
+		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			stdout, stderr, code := run(t, args...)
+			if code != 2 {
+				t.Errorf("exit status = %d, want 2", code)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want it empty", stdout)
+			}
+			if !strings.HasPrefix(stderr, "error: usage: unknown ") {
+				t.Errorf("stderr = %q, want an unknown flag error", stderr)
+			}
+		})
 	}
 }
 
@@ -1252,8 +1275,8 @@ func TestVerboseLevelsAddDetail(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			args := append(append([]string{}, tt.flags...),
-				"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
+			args := append(append([]string{"verify"}, tt.flags...),
+				"-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
 			)
 			stdout, stderr, code := run(t, args...)
 			if code != 0 {
@@ -1285,7 +1308,7 @@ func TestVerboseLogsTheAgentSocket(t *testing.T) {
 		t.Fatalf("writing data: %v", err)
 	}
 
-	stdout, stderr, code := run(t, "-v", "sign", "-f", data, "-k", key)
+	stdout, stderr, code := run(t, "sign", "-v", "-f", data, "-k", key)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
@@ -1302,7 +1325,7 @@ func TestVerboseLogsTheAgentSocket(t *testing.T) {
 func TestSignAppliesLandlock(t *testing.T) {
 	key := startAgent(t)
 
-	_, stderr, code := runWithInput(t, "signed by the CLI\n", "-vv", "sign", "-k", key)
+	_, stderr, code := runWithInput(t, "signed by the CLI\n", "sign", "-vv", "-k", key)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
@@ -1323,7 +1346,7 @@ func TestVerboseKeepsJSONOnStdout(t *testing.T) {
 	f := newFixture(t, "file")
 
 	stdout, stderr, code := run(t,
-		"-vvv", "-j", "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
+		"verify", "-vvv", "-j", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
 	)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
@@ -1339,7 +1362,7 @@ func TestVerboseKeepsJSONOnStdout(t *testing.T) {
 func TestVerboseOutputCarriesNoTerminalEscapes(t *testing.T) {
 	f := newFixture(t, "file"+string(rune(0x1b))+"]0;PWNED"+string(rune(0x07)))
 
-	_, stderr, code := run(t, "-vvv", "inspect", "-s", f.signature)
+	_, stderr, code := run(t, "inspect", "-vvv", "-s", f.signature)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
@@ -1354,7 +1377,7 @@ func TestVerboseOutputCarriesNoTerminalEscapes(t *testing.T) {
 func TestVerboseNamesTheInputSource(t *testing.T) {
 	f := newFixture(t, "file")
 
-	_, stderr, code := run(t, "-vv", "inspect", "-s", f.signature)
+	_, stderr, code := run(t, "inspect", "-vv", "-s", f.signature)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
@@ -1366,7 +1389,7 @@ func TestVerboseNamesTheInputSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading signature: %v", err)
 	}
-	_, stderr, code = runWithInput(t, string(signature), "-vv", "inspect")
+	_, stderr, code = runWithInput(t, string(signature), "inspect", "-vv")
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
@@ -1382,7 +1405,7 @@ func TestVerboseNamesTheInputSource(t *testing.T) {
 func TestVerboseLogsLandlock(t *testing.T) {
 	f := newFixture(t, "file")
 
-	_, stderr, code := run(t, "-vv", "inspect", "-s", f.signature)
+	_, stderr, code := run(t, "inspect", "-vv", "-s", f.signature)
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
@@ -1411,7 +1434,7 @@ func TestLandlockKeepsTimestampsLocal(t *testing.T) {
 
 	// Valid after local midnight, but not midnight UTC.
 	stdout, stderr, code := run(t,
-		"-v", "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature,
+		"verify", "-v", "-a", f.allowed, "-f", f.data, "-s", f.signature,
 		"-n", "file", "-p", f.principal, "-t", "2025-12-31T18:00:00Z",
 	)
 	if code != 0 {
