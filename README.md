@@ -89,6 +89,7 @@ commands:
   sign      Sign data with specified public key and namespace
   verify    Verify signed data using allowed signers files
   check     Check signed data, with optional public key/namespace validation
+  version   Show version
 ```
 
 Every command also accepts:
@@ -402,4 +403,14 @@ JSON output for a successful verification with `-n file`:
     "verification": "valid"
   }
 }
+```
+
+### Version
+
+`version` shows the version. `make` sets it from `git describe`. Other builds
+use the module version Go records, or `unknown` if there is none.
+
+```
+$ ssh-sign version
+v0.3.0
 ```

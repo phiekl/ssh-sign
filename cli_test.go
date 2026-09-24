@@ -201,13 +201,50 @@ func TestHelpListsPublicCommands(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
-	for _, command := range []string{"inspect", "sign", "verify", "check"} {
+	for _, command := range []string{"inspect", "sign", "verify", "check", "version"} {
 		if !strings.Contains(stdout, "\n  "+command+" ") {
 			t.Errorf("help output is missing command %q:\n%s", command, stdout)
 		}
 	}
 	if strings.Contains(stdout, "pure-verify") {
 		t.Errorf("help output still contains pure-verify:\n%s", stdout)
+	}
+}
+
+func TestVersion(t *testing.T) {
+	stdout, stderr, code := run(t, "version")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit status = %d, stderr = %q, want 0 and empty", code, stderr)
+	}
+	text := strings.TrimSuffix(stdout, "\n")
+	if text == "" || strings.Contains(text, "\n") {
+		t.Fatalf("stdout = %q, want a single version line", stdout)
+	}
+
+	stdout, _, code = run(t, "version", "-j")
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0", code)
+	}
+	result, ok := decodeJSON(t, stdout)["result"].(map[string]any)
+	if !ok || result["version"] != text {
+		t.Errorf("JSON output = %s, want result.version %q", stdout, text)
+	}
+}
+
+func TestVersionSetAtLinkTime(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "ssh-sign")
+	build := exec.Command("go", "build",
+		"-ldflags", "-X pxy.se/go/ssh-sign/internal/cmd.version=v9.9.9-test", "-o", binary, ".",
+	)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v: %s", err, out)
+	}
+	out, err := exec.Command(binary, "version").Output()
+	if err != nil {
+		t.Fatalf("running version: %v", err)
+	}
+	if string(out) != "v9.9.9-test\n" {
+		t.Errorf("stdout = %q, want %q", out, "v9.9.9-test\n")
 	}
 }
 

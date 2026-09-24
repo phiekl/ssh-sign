@@ -23,6 +23,7 @@ var commands = []struct {
 	{"sign", "Sign data with specified public key and namespace", &cmd.SignCommand{}},
 	{"verify", "Verify signed data using allowed signers files", &cmd.VerifyCommand{}},
 	{"check", "Check signed data, with optional public key/namespace validation", &cmd.CheckCommand{}},
+	{"version", "Show version", &cmd.VersionCommand{}},
 }
 
 func main() {

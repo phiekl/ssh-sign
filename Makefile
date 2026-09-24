@@ -6,6 +6,7 @@ BUILD_DIR := build
 BINARY := $(BUILD_DIR)/ssh-sign
 SBOM := $(BINARY).spdx.json
 GOAMD64 ?= v3
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 SYFT ?= syft
 TAGS ?=
 GOTAGS := $(if $(TAGS),-tags $(TAGS))
@@ -14,9 +15,11 @@ GOTAGS := $(if $(TAGS),-tags $(TAGS))
 
 all: test vet build
 
+# Pass the version through the environment, so the shell does not parse it.
+build: export SSH_SIGN_VERSION = $(VERSION)
 build:
 	mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 GOAMD64=$(GOAMD64) go build $(GOTAGS) -trimpath -ldflags="-s -w" -o $(BINARY) .
+	CGO_ENABLED=0 GOAMD64=$(GOAMD64) go build $(GOTAGS) -trimpath -ldflags="-s -w -X pxy.se/go/ssh-sign/internal/cmd.version=$$SSH_SIGN_VERSION" -o $(BINARY) .
 
 sbom: build
 	$(SYFT) scan file:$(BINARY) --output spdx-json=$(SBOM)
