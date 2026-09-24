@@ -11,18 +11,13 @@ on: ["push", "pull_request"]
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # 1.24 is the minimum go.mod allows; anything older only makes
-        # the toolchain download 1.24 and test nothing new.
-        go-version: ["1.24", "1.26"]
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: "1.26.0"
 
       - name: Download dependencies
         run: go mod download
@@ -53,7 +48,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version: "1.26.0"
 
       - name: Download dependencies
         run: go mod download
