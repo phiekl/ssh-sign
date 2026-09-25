@@ -1584,9 +1584,9 @@ func TestSignRejectsABadConfig(t *testing.T) {
 			want:    `line 2: expected "name = value"`,
 		},
 		{
-			name:    "syntax with key flag",
+			name:    "syntax with an alias key flag",
 			content: "[sign]\nbogus = x\n",
-			args:    []string{"-k", otherKeyLine},
+			args:    []string{"-k", "work"},
 			want:    `line 2: unknown option "sign.bogus"`,
 		},
 		{
@@ -1611,6 +1611,16 @@ func TestSignRejectsABadConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSignWithAPublicKeyIgnoresTheConfig(t *testing.T) {
+	key := startAgent(t)
+	writeConfig(t, "[invalid]\n")
+
+	_, stderr, code := runWithInput(t, "hello\n", "sign", "-k", key)
+	if code != 0 {
+		t.Errorf("exit status = %d, want 0 (stderr: %s)", code, stderr)
 	}
 }
 
@@ -1809,6 +1819,172 @@ func TestVerifyRejectsAWorldWritableSignersFile(t *testing.T) {
 	}
 
 	stdout, stderr, code := run(t, "verify", "-f", f.data, "-s", f.signature, "-n", "file")
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want it empty", stdout)
+	}
+	if want := `unsafe permissions: "` + path + `" is writable by group or others (mode 0666)`; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
+func TestSignResolvesAliases(t *testing.T) {
+	key := startAgent(t)
+	writeConfig(t, "[sign]\nkey = default\n[alias]\ndefault = "+key+"\nwork@example.com = "+key+"\nother = "+otherKeyLine+"\n")
+
+	t.Run("flag", func(t *testing.T) {
+		stdout, stderr, code := runWithInput(t, "hello\n", "sign", "-v", "-k", "work@example.com")
+		if code != 0 {
+			t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if !strings.HasPrefix(stdout, "-----BEGIN SSH SIGNATURE-----\n") {
+			t.Errorf("stdout = %q, want an armored signature", stdout)
+		}
+		if want := "debug1: sign: resolved alias alias=work@example.com"; !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+		}
+	})
+
+	t.Run("sign.key", func(t *testing.T) {
+		_, stderr, code := runWithInput(t, "hello\n", "sign")
+		if code != 0 {
+			t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+		}
+	})
+
+	t.Run("flag overrides sign.key", func(t *testing.T) {
+		_, stderr, code := runWithInput(t, "hello\n", "sign", "-k", "other")
+		if code != 1 || !strings.Contains(stderr, "no key matched") {
+			t.Errorf("exit status = %d, stderr = %q, want the other key looked up", code, stderr)
+		}
+	})
+
+	t.Run("unknown alias", func(t *testing.T) {
+		stdout, stderr, code := runWithInput(t, "hello\n", "sign", "-k", "missing")
+		if code != 2 {
+			t.Errorf("exit status = %d, want 2", code)
+		}
+		if stdout != "" {
+			t.Errorf("stdout = %q, want it empty", stdout)
+		}
+		if want := `invalid signing key: "missing" is neither a public key (`; !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+		if want := ") nor an alias in config"; !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+	})
+
+	t.Run("unknown alias in sign.key", func(t *testing.T) {
+		path := writeConfig(t, "[sign]\nkey = missing\n")
+		_, stderr, code := runWithInput(t, "hello\n", "sign")
+		if code != 1 {
+			t.Errorf("exit status = %d, want 1", code)
+		}
+		if want := `invalid sign.key in config file "` + path + `": "missing" is neither`; !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+	})
+}
+
+func TestSignRejectsAnInvalidAlias(t *testing.T) {
+	path := writeConfig(t, "[alias]\nmy work = "+otherKeyLine+"\n")
+	_, stderr, code := runWithInput(t, "hello\n", "sign")
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	if want := `config file "` + path + `": line 2: invalid alias name "my work"`; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
+func TestCheckResolvesAuthKeyAliases(t *testing.T) {
+	f := newFixture(t, "file")
+	writeConfig(t, "[alias]\nwork = "+f.keyLine()+"\nother = "+otherKeyLine+"\n")
+
+	t.Run("alias", func(t *testing.T) {
+		stdout, stderr, code := run(t,
+			"check", "-v", "-f", f.data, "-s", f.signature, "--auth-key", "work",
+		)
+		if code != 0 {
+			t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if !strings.Contains(stdout, "authentication = valid") {
+			t.Errorf("stdout = %q, want valid authentication", stdout)
+		}
+		if !strings.Contains(stderr, "debug1: check: resolved alias alias=work") {
+			t.Errorf("stderr = %q, want the alias logged", stderr)
+		}
+	})
+
+	t.Run("other key", func(t *testing.T) {
+		_, stderr, code := run(t, "check", "-f", f.data, "-s", f.signature, "-k", "other")
+		if code != 1 || !strings.Contains(stderr, "signature was created by public key") {
+			t.Errorf("exit status = %d, stderr = %q, want a key mismatch", code, stderr)
+		}
+	})
+
+	t.Run("unknown alias", func(t *testing.T) {
+		_, stderr, code := run(t, "check", "-f", f.data, "-s", f.signature, "-k", "missing")
+		if code != 2 || !strings.Contains(stderr, `"missing" is neither a public key`) {
+			t.Errorf("exit status = %d, stderr = %q, want an invalid auth key", code, stderr)
+		}
+	})
+
+	t.Run("direct key ignores config", func(t *testing.T) {
+		writeConfig(t, "[invalid]\n")
+		_, stderr, code := run(t,
+			"check", "-f", f.data, "-s", f.signature, "-k", f.keyLine(),
+		)
+		if code != 0 {
+			t.Errorf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+		}
+	})
+
+	t.Run("disabled auth ignores config", func(t *testing.T) {
+		writeConfig(t, "[invalid]\n")
+		_, stderr, code := run(t, "check", "-f", f.data, "-s", f.signature, "-K")
+		if code != 0 {
+			t.Errorf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+		}
+	})
+
+	t.Run("invalid config with another invalid flag", func(t *testing.T) {
+		path := writeConfig(t, "[invalid]\n")
+		_, stderr, code := run(t,
+			"check", "-f", f.data, "-s", f.signature, "-k", "work", "-t", "nonsense",
+		)
+		if code != 2 {
+			t.Errorf("exit status = %d, want 2", code)
+		}
+		for _, want := range []string{`invalid timestamp "nonsense"`, `config file "` + path + `"`} {
+			if !strings.Contains(stderr, want) {
+				t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+			}
+		}
+	})
+
+	t.Run("invalid config", func(t *testing.T) {
+		path := writeConfig(t, "[invalid]\n")
+		_, stderr, code := run(t, "check", "-f", f.data, "-s", f.signature, "-k", "work")
+		if code != 1 || !strings.Contains(stderr, `config file "`+path+`"`) {
+			t.Errorf("exit status = %d, stderr = %q, want a config error", code, stderr)
+		}
+	})
+}
+
+// TestCheckRejectsAnUnsafeConfig covers the reason for the check: an alias
+// decides which key check authenticates.
+func TestCheckRejectsAnUnsafeConfig(t *testing.T) {
+	f := newFixture(t, "file")
+	path := writeConfig(t, "[alias]\nwork = "+f.keyLine()+"\n")
+	if err := os.Chmod(path, 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := run(t, "check", "-f", f.data, "-s", f.signature, "-k", "work")
 	if code != 1 {
 		t.Errorf("exit status = %d, want 1", code)
 	}

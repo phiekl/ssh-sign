@@ -6,7 +6,6 @@ SPDX-License-Identifier: MIT
 
 # TODO
 
-- [ ] sign: Support aliased pubkey references via config file.
 - [ ] verify: JSON output should include path to allowed signers file and line number etc.
 - [ ] verify: Support checking revoked keys.
 - [ ] verify: Default -s to <file>.sig if stdin is a tty.

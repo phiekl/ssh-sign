@@ -13,6 +13,7 @@ import (
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 type CheckCommand struct {
@@ -42,10 +43,25 @@ func (c *CheckCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 			c.commandOpts.Timestamp = ts
 		}
 	}
-	if err := flow.CheckAuthKey(
-		c.commandOpts.AuthKey, c.commandOpts.NoAuthKey,
-	); err != nil {
-		errs = append(errs, cli.MarkUsage(err))
+	aliasFailed := false
+	if key := c.commandOpts.AuthKey; key != "" && !c.commandOpts.NoAuthKey && mayBeAlias(key) {
+		aliasFailed = true
+		if cfg, err := loadConfig(log); err != nil {
+			errs = append(errs, err)
+		} else if pk, alias, err := resolveKeyReference(cfg, key); err != nil {
+			errs = append(errs, cli.MarkUsage(fmt.Errorf("invalid authentication key: %w", err)))
+		} else {
+			aliasFailed = false
+			c.commandOpts.AuthKey = sshsig.PublicKeyString(pk)
+			cli.Debug(log, cli.LevelDebug1, "check: resolved alias", "alias", alias)
+		}
+	}
+	if !aliasFailed {
+		if err := flow.CheckAuthKey(
+			c.commandOpts.AuthKey, c.commandOpts.NoAuthKey,
+		); err != nil {
+			errs = append(errs, cli.MarkUsage(err))
+		}
 	}
 	if err := flow.CheckNamespace(
 		c.commandOpts.Namespace, c.commandOpts.NoNamespace,
@@ -121,7 +137,7 @@ func (c *CheckCommand) Flags(s *args.Set) {
 	s.String(
 		&c.commandOpts.AuthKey,
 		"auth-key", "k", "",
-		"require a signature created by specified public key",
+		"require a signature created by this public key or config alias",
 	)
 	s.Bool(
 		&c.commandOpts.NoAuthKey,

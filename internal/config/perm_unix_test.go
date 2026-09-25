@@ -126,3 +126,68 @@ func TestCheckOpenFile(t *testing.T) {
 		t.Errorf("CheckOpenFile() = nil for a group-writable file, want an error")
 	}
 }
+
+func TestLoadRejectsUnsafePermissions(t *testing.T) {
+	setup := func(t *testing.T) (dir, file string) {
+		dir = t.TempDir()
+		file = filepath.Join(dir, FileName)
+		if err := os.WriteFile(file, []byte("[alias]\nwork = "+testKey+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return dir, file
+	}
+
+	t.Run("safe", func(t *testing.T) {
+		dir, _ := setup(t)
+		if _, err := Load(dir); err != nil {
+			t.Errorf("Load() error = %v", err)
+		}
+	})
+	for name, mode := range map[string]fs.FileMode{"group-writable": 0o620, "world-writable": 0o606} {
+		t.Run(name+" file", func(t *testing.T) {
+			dir, file := setup(t)
+			if err := os.Chmod(file, mode); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(dir)
+			if err == nil || !strings.Contains(err.Error(), `unsafe permissions: "`+file+`" is writable by group or others`) {
+				t.Errorf("Load() error = %v, want the file rejected", err)
+			}
+		})
+	}
+	t.Run("writable directory", func(t *testing.T) {
+		dir, _ := setup(t)
+		if err := os.Chmod(dir, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(dir)
+		if err == nil || !strings.Contains(err.Error(), `unsafe permissions: "`+dir+`" is writable by group or others`) {
+			t.Errorf("Load() error = %v, want the directory rejected", err)
+		}
+	})
+	t.Run("symlink target", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(t.TempDir(), "target")
+		if err := os.WriteFile(target, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(target, 0o666); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, FileName)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "unsafe permissions") {
+			t.Errorf("Load() error = %v, want the symlink target rejected", err)
+		}
+	})
+	t.Run("missing file in writable directory", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Chmod(dir, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err != nil {
+			t.Errorf("Load() error = %v, want no config and no error", err)
+		}
+	})
+}

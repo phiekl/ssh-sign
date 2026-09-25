@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/internal/args"
+	"pxy.se/go/ssh-sign/internal/config"
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
 	"pxy.se/go/ssh-sign/pkg/flow"
@@ -28,25 +29,33 @@ type SignCommand struct {
 func (c *SignCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	c.commandOpts.Log = log
 
-	cfg, err := loadConfig(log)
-	if err != nil {
-		return nil, []error{err}
+	// Like check, read the config only when it is needed.
+	var err error
+	cfg := &config.Config{}
+	if c.signKey == "" || mayBeAlias(c.signKey) {
+		if cfg, err = loadConfig(log); err != nil {
+			return nil, []error{err}
+		}
 	}
 
 	var pk ssh.PublicKey
+	var alias string
 	switch {
 	case c.signKey != "":
-		pk, err = sshsig.ParsePublicKeyLine(c.signKey)
+		pk, alias, err = resolveKeyReference(cfg, c.signKey)
 		if err != nil {
 			return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %w", err))}
 		}
 	case cfg.SignKey != "":
-		pk, err = sshsig.ParsePublicKeyLine(cfg.SignKey)
+		pk, alias, err = resolveKeyReference(cfg, cfg.SignKey)
 		if err != nil {
 			return nil, []error{fmt.Errorf("invalid sign.key in config file %q: %w", cfg.Path, err)}
 		}
 	default:
 		return nil, []error{cli.MarkUsage(errors.New("missing required flag: sign-key"))}
+	}
+	if alias != "" {
+		cli.Debug(log, cli.LevelDebug1, "sign: resolved alias", "alias", alias)
 	}
 
 	if c.dataFile == "" {
@@ -108,7 +117,7 @@ func (c *SignCommand) Flags(s *args.Set) {
 	s.String(
 		&c.signKey,
 		"sign-key", "k", "",
-		"create signature using this pubkey reference (must exist in ssh-agent)",
+		"create signature using this pubkey reference or config alias",
 	)
 	s.DenyEmpty("sign-key")
 }

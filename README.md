@@ -50,12 +50,20 @@ An optional config file will be read from `$SSH_SIGN_CONFIG_DIR/config`
 
 ```ini
 [sign]
-key = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk
+key = work
+
+[alias]
+work = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk
+user@example.com = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDa41u/FI8kReoBAPIIzt11NwF00HIytf1fUsUuP9csA
 ```
 
 | option | meaning |
 | --- | --- |
-| `sign.key` | public key to use when `ssh-sign sign` is run without `--sign-key` |
+| `sign.key` | public key or alias to use when `ssh-sign sign` is run without `--sign-key` |
+| `alias.<name>` | public key referenced by `--auth-key`, `--sign-key` or `sign.key` |
+
+Alias names may contain ASCII letters, digits and `. _ % + - @`, like email
+addresses.
 
 Section and option names are case-sensitive, and no quoting is used for values.
 Empty lines and lines starting with `#` are ignored.
@@ -136,7 +144,7 @@ debug1: sign: signed format=ssh-ed25519 hash=sha512
 ```
   -f, --data-file   read data to sign from file instead of stdin
   -n, --namespace   create signature with specified namespace (default "file")
-  -k, --sign-key    create signature using this pubkey reference (must exist in ssh-agent)
+  -k, --sign-key    create signature using this pubkey reference or config alias
 ```
 
 #### Example
@@ -259,7 +267,7 @@ is still visible. JSON reports `flags`, `user_presence`, `user_verification`,
   -s, --signature-file   read signature from file instead of stdin
   -n, --namespace        require a signature with specified namespace (default "file")
   -N, --no-namespace     accept a signature with any namespace
-  -k, --auth-key         require a signature created by specified public key
+  -k, --auth-key         require a signature created by this public key or config alias
   -K, --no-auth-key      accept a signature created by any public key
   -t, --timestamp        validate this RFC3339/RFC1123 timestamp rather than current time
 ```

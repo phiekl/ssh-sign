@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"pxy.se/go/ssh-sign/internal/helper"
+	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
 // DirEnv names the environment variable that overrides ~/.ssh/sign.
@@ -29,6 +30,25 @@ type Config struct {
 	// Path is empty when no config file was found.
 	Path    string
 	SignKey string
+	// Aliases maps names to public key lines, for sign -k, check -k and sign.key.
+	Aliases map[string]string
+}
+
+// ValidAliasName reports whether name consists of the characters allowed in
+// an alias: ASCII letters, digits and . _ % + - @, as in email addresses.
+func ValidAliasName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case 'a' <= r && r <= 'z', 'A' <= r && r <= 'Z', '0' <= r && r <= '9':
+		case strings.ContainsRune("._%+-@", r):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Dir returns the config directory. An empty DirEnv uses the default.
@@ -44,6 +64,8 @@ func Dir() (string, error) {
 }
 
 // Load reads the config file in dir. A missing file returns an empty config.
+// Aliases decide which key check authenticates, so the file and dir must be
+// safe from other users, see checkInfo.
 func Load(dir string) (*Config, error) {
 	path := filepath.Join(dir, FileName)
 	f, err := os.Open(path)
@@ -54,6 +76,16 @@ func Load(dir string) (*Config, error) {
 		return nil, fmt.Errorf("config file %q: %w", path, helper.UnwrapPathError(err))
 	}
 	defer func() { _ = f.Close() }()
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("config directory %q: %w", dir, helper.UnwrapPathError(err))
+	}
+	if err := checkInfo(dir, info); err != nil {
+		return nil, err
+	}
+	if err := CheckOpenFile(f); err != nil {
+		return nil, err
+	}
 
 	cfg, err := Parse(f)
 	if err != nil {
@@ -81,7 +113,7 @@ func Parse(r io.Reader) (*Config, error) {
 				return nil, fmt.Errorf("line %d: invalid section header", n)
 			}
 			section = strings.TrimSpace(line[1 : len(line)-1])
-			if section != "sign" {
+			if section != "sign" && section != "alias" {
 				return nil, fmt.Errorf("line %d: unknown section %q", n, section)
 			}
 			continue
@@ -96,7 +128,7 @@ func Parse(r io.Reader) (*Config, error) {
 			return nil, fmt.Errorf("line %d: option %q outside a section", n, name)
 		}
 		option := section + "." + name
-		if option != "sign.key" {
+		if section == "sign" && name != "key" {
 			return nil, fmt.Errorf("line %d: unknown option %q", n, option)
 		}
 		if value == "" {
@@ -106,12 +138,38 @@ func Parse(r io.Reader) (*Config, error) {
 			return nil, fmt.Errorf("line %d: duplicate option %q", n, option)
 		}
 		seen[option] = true
-		cfg.SignKey = value
+
+		if section == "sign" {
+			cfg.SignKey = value
+			continue
+		}
+		if err := checkAlias(name, value); err != nil {
+			return nil, fmt.Errorf("line %d: %w", n, err)
+		}
+		if cfg.Aliases == nil {
+			cfg.Aliases = map[string]string{}
+		}
+		cfg.Aliases[name] = value
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// checkAlias validates the name and public key line. Names that parse as
+// public keys are rejected so references remain unambiguous.
+func checkAlias(name, value string) error {
+	if !ValidAliasName(name) {
+		return fmt.Errorf("invalid alias name %q: use letters, digits and . _ %% + - @", name)
+	}
+	if _, err := sshsig.ParsePublicKeyLine(name); err == nil {
+		return fmt.Errorf("alias name %q is a public key", name)
+	}
+	if _, err := sshsig.ParsePublicKeyLine(value); err != nil {
+		return fmt.Errorf("alias %q: %w", name, err)
+	}
+	return nil
 }
 
 // SignersDirName is the directory in the config directory whose *.conf files
