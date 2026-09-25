@@ -5,10 +5,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 
+	"golang.org/x/crypto/ssh"
 	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -26,9 +28,25 @@ type SignCommand struct {
 func (c *SignCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	c.commandOpts.Log = log
 
-	pk, err := sshsig.ParsePublicKeyLine(c.signKey)
+	cfg, err := loadConfig(log)
 	if err != nil {
-		return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %w", err))}
+		return nil, []error{err}
+	}
+
+	var pk ssh.PublicKey
+	switch {
+	case c.signKey != "":
+		pk, err = sshsig.ParsePublicKeyLine(c.signKey)
+		if err != nil {
+			return nil, []error{cli.MarkUsage(fmt.Errorf("invalid signing key: %w", err))}
+		}
+	case cfg.SignKey != "":
+		pk, err = sshsig.ParsePublicKeyLine(cfg.SignKey)
+		if err != nil {
+			return nil, []error{fmt.Errorf("invalid sign.key in config file %q: %w", cfg.Path, err)}
+		}
+	default:
+		return nil, []error{cli.MarkUsage(errors.New("missing required flag: sign-key"))}
 	}
 
 	if c.dataFile == "" {
@@ -92,6 +110,5 @@ func (c *SignCommand) Flags(s *args.Set) {
 		"sign-key", "k", "",
 		"create signature using this pubkey reference (must exist in ssh-agent)",
 	)
-	s.Required("sign-key")
 	s.DenyEmpty("sign-key")
 }

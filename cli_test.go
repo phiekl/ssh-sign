@@ -45,6 +45,11 @@ func TestMain(m *testing.M) {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
+	// Keep the developer's own config out of the tests.
+	if err := os.Setenv("SSH_SIGN_CONFIG_DIR", filepath.Join(dir, "config")); err != nil {
+		panic(err)
+	}
+
 	binary = filepath.Join(dir, "ssh-sign")
 	build := exec.Command("go", "build", "-o", binary, ".")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -1495,3 +1500,118 @@ Y5ATRFEmafGGcAIP73iEVG1oBpCOmXY2ydEexu0nKP89JJ8q2d93r9RhymmXMF+6+aFiGN
 xAkFAAAADQ==
 -----END SSH SIGNATURE-----
 `
+
+// writeConfig writes a config file to a new directory named by
+// SSH_SIGN_CONFIG_DIR and returns the file's path.
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	return path
+}
+
+func TestSignUsesTheConfiguredKey(t *testing.T) {
+	key := startAgent(t)
+	path := writeConfig(t, "[sign]\nkey = "+key+"\n")
+
+	stdout, stderr, code := runWithInput(t, "hello\n", "sign", "-vv")
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "-----BEGIN SSH SIGNATURE-----\n") {
+		t.Errorf("stdout = %q, want an armored signature", stdout)
+	}
+	if want := "debug2: config: read path=" + path; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+	}
+}
+
+func TestSignKeyFlagOverridesTheConfig(t *testing.T) {
+	key := startAgent(t)
+	writeConfig(t, "[sign]\nkey = "+otherKeyLine+"\n")
+
+	_, stderr, code := runWithInput(t, "hello\n", "sign", "-k", key)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+}
+
+func TestSignReadsTheDefaultConfigDir(t *testing.T) {
+	key := startAgent(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SSH_SIGN_CONFIG_DIR", "")
+	dir := filepath.Join(home, ".ssh", "sign")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config"), []byte("[sign]\nkey = "+key+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runWithInput(t, "hello\n", "sign")
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+}
+
+func TestSignWithoutHomeOrConfigDir(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("SSH_SIGN_CONFIG_DIR", "")
+
+	_, stderr, code := run(t, "sign")
+	if code != 2 {
+		t.Errorf("exit status = %d, want 2", code)
+	}
+	if !strings.Contains(stderr, "error: sign: missing required flag: sign-key\n") {
+		t.Errorf("stderr = %q, want the missing flag reported", stderr)
+	}
+}
+
+func TestSignRejectsABadConfig(t *testing.T) {
+	startAgent(t)
+	tests := []struct {
+		name    string
+		content string
+		args    []string
+		want    string
+	}{
+		{
+			name:    "syntax",
+			content: "[sign]\nkey\n",
+			want:    `line 2: expected "name = value"`,
+		},
+		{
+			name:    "syntax with key flag",
+			content: "[sign]\nbogus = x\n",
+			args:    []string{"-k", otherKeyLine},
+			want:    `line 2: unknown option "sign.bogus"`,
+		},
+		{
+			name:    "invalid key",
+			content: "[sign]\nkey = nonsense\n",
+			want:    "invalid sign.key",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.content)
+			stdout, stderr, code := runWithInput(t, "hello\n", append([]string{"sign"}, tt.args...)...)
+			if code != 1 {
+				t.Errorf("exit status = %d, want 1", code)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want it empty", stdout)
+			}
+			for _, want := range []string{tt.want, `config file "` + path + `"`} {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+				}
+			}
+		})
+	}
+}

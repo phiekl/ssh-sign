@@ -43,6 +43,24 @@ Landlock, other operating systems, and an unavailable or erroring ABI query
 continue without restriction.
 
 
+## Config
+
+An optional config file will be read from `$SSH_SIGN_CONFIG_DIR/config`
+(`~/.ssh/sign/config` by default).
+
+```ini
+[sign]
+key = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk
+```
+
+| option | meaning |
+| --- | --- |
+| `sign.key` | public key to use when `ssh-sign sign` is run without `--sign-key` |
+
+Section and option names are case-sensitive, and no quoting is used for values.
+Empty lines and lines starting with `#` are ignored.
+
+
 ## Result fields
 
 `verify` and `check` reports various information and result fields:
