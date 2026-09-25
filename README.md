@@ -7,18 +7,17 @@ SPDX-License-Identifier: MIT
 # ssh-sign
 
 This tool signs and verifies data using the
-[SSHSIG](https://github.com/openssh/openssh-portable/blob/V_9_2_P1/PROTOCOL.sshsig)
+[SSHSIG](https://github.com/openssh/openssh-portable/blob/V_10_5_P1/PROTOCOL.sshsig)
 protocol, as implemented by `ssh-keygen -Y sign` and `ssh-keygen -Y verify`.
 
 Compared to `ssh-keygen`, which has *a lot* of features, most of which are not
-related to SSHSIG itself, `ssh-sign` is dedicated to SSHSIG. It attempts to
-provide a simpler user interface, informative output/error messages, including
-optional JSON output for scripting purposes.
+related to SSHSIG itself, `ssh-sign` is dedicated to SSHSIG. The main goal is
+to provide a simpler user interface, more informative output/error messages,
+including optional JSON output for scripting purposes.
 
-The `golang.org/x/crypto` module does not support SSHSIG, so `ssh-sign`
-implements the protocol in `pkg/sshsig` using `golang.org/x/crypto/ssh` and the
-standard library. Compatibility is tested by signing and verifying with both
-`ssh-sign` and `ssh-keygen`.
+The SSHSIG protocol is implemented in `pkg/sshsig` using
+`golang.org/x/crypto/ssh` and the standard library. Compatibility is tested by
+signing and verifying with both `ssh-sign` and `ssh-keygen`.
 
 
 ## Exit status
@@ -42,21 +41,6 @@ itself.
 Restriction is automatic and best effort. Unsupported kernels, disabled
 Landlock, other operating systems, and an unavailable or erroring ABI query
 continue without restriction.
-
-> [!IMPORTANT]
-> This reduces the impact of a bug - it is not a complete sandbox.
-
-
-## Certificates
-
-OpenSSH certificates must be trusted explicitly with `check -k` or an
-allowed signers entry; `cert-authority` is not supported.
-
-Certificates must be user certificates valid at verification time (`-t` or
-the current time). `check -K` skips these checks. `sign` requires the
-certificate to be valid now.
-
-CA signatures and certificate principals are not checked.
 
 
 ## Result fields
@@ -122,9 +106,6 @@ debug2: agent: listed keys keys=1
 debug1: agent: matched key type=ssh-ed25519 fingerprint=SHA256:LyEOd2jBAC/rJ6fwD0FVOBJTLJsKorRx5bjfBeZ0FM8
 debug1: sign: signed format=ssh-ed25519 hash=sha512
 ```
-
-> [!NOTE]
-> Debug values are quoted and terminal controls escaped.
 
 
 ## Sub commands
