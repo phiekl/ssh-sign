@@ -6,7 +6,6 @@ package allowedsigners
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -100,17 +99,17 @@ func (f *File) matchEntry(
 		if restricted {
 			if !patternsMatch(ent.Options.Namespaces, ns) {
 				namespaceMismatches++
-				errs = append(errs, fmt.Sprintf("line=%d: namespace mismatch", ent.Line))
+				errs = append(errs, ent.Location()+": namespace mismatch")
 				continue
 			}
 			namespaceMatches++
 		}
 		if ent.Options.ValidAfter != nil && ts.Before(*ent.Options.ValidAfter) {
-			errs = append(errs, fmt.Sprintf("line=%d: not yet valid", ent.Line))
+			errs = append(errs, ent.Location()+": not yet valid")
 			continue
 		}
 		if ent.Options.ValidBefore != nil && ts.After(*ent.Options.ValidBefore) {
-			errs = append(errs, fmt.Sprintf("line=%d: expired", ent.Line))
+			errs = append(errs, ent.Location()+": expired")
 			continue
 		}
 		if mode == namespaceRequired && !restricted {

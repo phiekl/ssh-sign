@@ -23,6 +23,9 @@ type File struct {
 
 // Entry represents a single non-comment line in an allowed signers file.
 type Entry struct {
+	// Source names the file, or is empty for an unnamed reader.
+	Source string
+
 	// File line number.
 	Line int
 
@@ -56,4 +59,9 @@ type Options struct {
 
 	// ValidBefore specifies the time before which the entry is accepted.
 	ValidBefore *time.Time
+}
+
+// Location returns the entry's line, qualified by its source if named.
+func (e *Entry) Location() string {
+	return location(e.Source, e.Line)
 }

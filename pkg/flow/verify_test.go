@@ -472,3 +472,71 @@ func TestVerifyRejectsPinningAndWaivingTogether(t *testing.T) {
 		t.Errorf("Verify() errors = %v, want a conflicting-choice error", errs)
 	}
 }
+
+// namedReaders pairs names with contents.
+func namedReaders(pairs ...string) []NamedReader {
+	var readers []NamedReader
+	for i := 0; i < len(pairs); i += 2 {
+		readers = append(readers, NamedReader{Name: pairs[i], Reader: strings.NewReader(pairs[i+1])})
+	}
+	return readers
+}
+
+func TestVerifyNamesAllowedSignersFiles(t *testing.T) {
+	s := sign(t, "git")
+	opts := s.verifyOpts("", "git")
+	opts.AllowedSignersFile = nil
+	opts.AllowedSignersFiles = namedReaders(
+		"a.conf", `alice@example.com namespaces="email" `+s.keyLine,
+		"b.conf", `alice@example.com valid-before="20200101Z" `+s.keyLine+"\n",
+	)
+
+	_, errs := Verify(opts)
+	want := `file="a.conf" line=1: namespace mismatch, file="b.conf" line=1: expired`
+	if !strings.Contains(errorText(errs), want) {
+		t.Errorf("Verify() errors = %v, want %q", errs, want)
+	}
+}
+
+func TestVerifyMatchesALaterAllowedSignersFile(t *testing.T) {
+	s := sign(t, "git")
+	opts := s.verifyOpts("", "")
+	opts.AllowedSignersFile = nil
+	opts.AllowedSignersFiles = namedReaders(
+		"a.conf", "alice@example.com "+s.keyLine+"\n",
+		"b.conf", `bob@example.com namespaces="git" `+s.keyLine+"\n",
+	)
+
+	res, errs := Verify(opts)
+	if len(errs) != 0 {
+		t.Fatalf("Verify() errors = %v, want none", errs)
+	}
+	if res.Principal != "bob@example.com" || res.Designation != "valid" {
+		t.Errorf("Verify() = %+v, want the restricted entry from b.conf", res)
+	}
+}
+
+func TestVerifyRequiresAllowedSigners(t *testing.T) {
+	s := sign(t, "git")
+	opts := s.verifyOpts("", "git")
+	opts.AllowedSignersFile = nil
+
+	_, errs := Verify(opts)
+	if !strings.Contains(errorText(errs), "allowed signers file is required") {
+		t.Errorf("Verify() errors = %v, want allowed signers required", errs)
+	}
+}
+
+func TestVerifyRejectsBothAllowedSignersInputs(t *testing.T) {
+	s := sign(t, "git")
+	opts := s.verifyOpts("alice@example.com "+s.keyLine+"\n", "git")
+	opts.AllowedSignersFiles = namedReaders("a.conf", "alice@example.com "+s.keyLine+"\n")
+
+	res, errs := Verify(opts)
+	if res != nil {
+		t.Errorf("Verify() result = %+v, want nil", res)
+	}
+	if !strings.Contains(errorText(errs), "mutually exclusive") {
+		t.Errorf("Verify() errors = %v, want the conflict reported", errs)
+	}
+}

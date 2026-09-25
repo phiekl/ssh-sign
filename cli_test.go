@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -456,10 +457,7 @@ func TestCommandsWithoutOptionsReportMissingFlags(t *testing.T) {
 	}{
 		{command: "sign", want: "missing required flag: sign-key"},
 		{command: "check", want: "missing required flag: verify-file"},
-		{
-			command: "verify",
-			want:    "missing required flags: allowed-signers-file, verify-file",
-		},
+		{command: "verify", want: "missing required flag: verify-file"},
 	}
 	for _, tt := range tests {
 		for _, jsonMode := range []bool{false, true} {
@@ -1613,5 +1611,211 @@ func TestSignRejectsABadConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// writeSigners writes files to the signers directory of a new config directory
+// and returns the signers directory.
+func writeSigners(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	signers := filepath.Join(dir, "signers")
+	if err := os.Mkdir(signers, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(signers, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("writing signers file: %v", err)
+		}
+	}
+	return signers
+}
+
+func TestVerifyDefaultsToTheSignersDirectory(t *testing.T) {
+	f := newFixture(t, "file")
+	// Unterminated files must not join lines.
+	signers := writeSigners(t, map[string]string{
+		"10-other.conf":   "other@example.com " + otherKeyLine,
+		"20-signer.conf":  f.principal + " " + f.keyLine(),
+		"30-ignored.txt":  "garbage",
+		".40-hidden.conf": "garbage",
+	})
+
+	stdout, stderr, code := run(t,
+		"verify", "-vv", "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal,
+	)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "authentication = valid") {
+		t.Errorf("stdout = %q, want a valid authentication", stdout)
+	}
+	first := strings.Index(stderr, "path="+filepath.Join(signers, "10-other.conf"))
+	second := strings.Index(stderr, "path="+filepath.Join(signers, "20-signer.conf"))
+	if first < 0 || second < first {
+		t.Errorf("stderr = %q, want both files logged in order", stderr)
+	}
+	for _, ignored := range []string{"30-ignored.txt", ".40-hidden.conf"} {
+		if strings.Contains(stderr, ignored) {
+			t.Errorf("stderr = %q, want %s ignored", stderr, ignored)
+		}
+	}
+	if strings.Contains(stderr, "skipped allowed signers line") {
+		t.Errorf("stderr = %q, want no skipped lines", stderr)
+	}
+}
+
+func TestVerifyLaterSignersFilesStillApply(t *testing.T) {
+	f := newFixture(t, "file")
+	writeSigners(t, map[string]string{
+		"a.conf": f.principal + ` namespaces="git" ` + f.keyLine() + "\n",
+		"b.conf": f.principal + ` namespaces="file" ` + f.keyLine() + "\n",
+	})
+
+	stdout, stderr, code := run(t, "verify", "-f", f.data, "-s", f.signature)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "designation    = valid") {
+		t.Errorf("stdout = %q, want a valid designation", stdout)
+	}
+}
+
+func TestVerifyAllowedSignersFileOverridesTheSignersDirectory(t *testing.T) {
+	f := newFixture(t, "file")
+	writeSigners(t, map[string]string{"a.conf": "other@example.com " + otherKeyLine + "\n"})
+
+	_, stderr, code := run(t,
+		"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file",
+	)
+	if code != 0 {
+		t.Fatalf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+}
+
+func TestVerifyNamesTheSignersFileOfALine(t *testing.T) {
+	f := newFixture(t, "file")
+	signers := writeSigners(t, map[string]string{
+		"a.conf": "# comment\n" + f.principal + ` valid-before="20200101Z" ` + f.keyLine() + "\n",
+		"b.conf": "bad line\n",
+	})
+
+	_, stderr, code := run(t,
+		"verify", "-v", "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal,
+	)
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	for _, want := range []string{
+		`file="` + filepath.Join(signers, "a.conf") + `" line=2: expired`,
+		"skipped allowed signers line file=" + filepath.Join(signers, "b.conf") + " line=1 ",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+		}
+	}
+}
+
+func TestVerifyWithoutAllowedSigners(t *testing.T) {
+	f := newFixture(t, "file")
+	args := []string{"verify", "-f", f.data, "-s", f.signature, "-n", "file"}
+	want := func(signers string) string {
+		return `missing allowed signers: use -a or add *.conf files to "` + signers + `"`
+	}
+
+	t.Run("no signers directory", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+		_, stderr, code := run(t, args...)
+		if code != 2 {
+			t.Errorf("exit status = %d, want 2", code)
+		}
+		if want := want(filepath.Join(dir, "signers")); !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+	})
+
+	t.Run("no conf files", func(t *testing.T) {
+		signers := writeSigners(t, map[string]string{"a.txt": "", ".b.conf": ""})
+		_, stderr, code := run(t, args...)
+		if code != 2 {
+			t.Errorf("exit status = %d, want 2", code)
+		}
+		if want := want(signers); !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+	})
+
+	t.Run("no config directory", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("SSH_SIGN_CONFIG_DIR", "")
+		_, stderr, code := run(t, args...)
+		if code != 2 {
+			t.Errorf("exit status = %d, want 2", code)
+		}
+		if want := "error: verify: missing allowed signers: use -a or set SSH_SIGN_CONFIG_DIR ($HOME is not defined)\n"; !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+	})
+}
+
+func TestVerifyReadsMoreSignersFilesThanOpenFileLimit(t *testing.T) {
+	f := newFixture(t, "file")
+	files := map[string]string{"99.conf": f.principal + " " + f.keyLine() + "\n"}
+	for i := range 64 {
+		files[fmt.Sprintf("%02d.conf", i)] = ""
+	}
+	writeSigners(t, files)
+
+	// Go raises the soft limit to the hard limit, so lower both.
+	c := exec.Command("sh", "-c", `ulimit -n 32 && exec "$@"`, "sh",
+		binary, "verify", "-f", f.data, "-s", f.signature, "-n", "file",
+	)
+	out, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("verify: %v: %s", err, out)
+	}
+}
+
+// TestVerifyParsesSignersFilesAfterLandlock uses a line over the parser's
+// limit, which fails parsing, to show when parsing happens.
+func TestVerifyParsesSignersFilesAfterLandlock(t *testing.T) {
+	f := newFixture(t, "file")
+	signers := writeSigners(t, map[string]string{"a.conf": strings.Repeat("x", 5<<20) + "\n"})
+
+	_, stderr, code := run(t, "verify", "-v", "-f", f.data, "-s", f.signature, "-n", "file")
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	doneAt := strings.Index(stderr, "debug1: landlock: unavailable best_effort=true")
+	if enabled := landlockEnabledLine.FindStringIndex(stderr); enabled != nil {
+		doneAt = enabled[0]
+	}
+	failedAt := strings.Index(stderr,
+		`failed parsing allowed signers file "`+filepath.Join(signers, "a.conf")+`"`,
+	)
+	if doneAt < 0 || failedAt < doneAt {
+		t.Errorf("stderr = %q, want Landlock completed before parsing", stderr)
+	}
+}
+
+func TestVerifyRejectsAWorldWritableSignersFile(t *testing.T) {
+	f := newFixture(t, "file")
+	signers := writeSigners(t, map[string]string{"a.conf": f.principal + " " + f.keyLine() + "\n"})
+	path := filepath.Join(signers, "a.conf")
+	if err := os.Chmod(path, 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := run(t, "verify", "-f", f.data, "-s", f.signature, "-n", "file")
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want it empty", stdout)
+	}
+	if want := `unsafe permissions: "` + path + `" is writable by group or others (mode 0666)`; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 }

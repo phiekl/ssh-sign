@@ -113,3 +113,50 @@ func Parse(r io.Reader) (*Config, error) {
 	}
 	return cfg, nil
 }
+
+// SignersDirName is the directory in the config directory whose *.conf files
+// together form the default allowed signers.
+const SignersDirName = "signers"
+
+// SignersFiles returns the *.conf files in the signers directory, sorted by
+// name. Dotfiles are ignored. A missing directory returns no files. The
+// directories and files must be safe from other users, see checkInfo.
+func SignersFiles(dir string) ([]string, error) {
+	signers := filepath.Join(dir, SignersDirName)
+	entries, err := os.ReadDir(signers)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("signers directory %q: %w", signers, helper.UnwrapPathError(err))
+	}
+	for _, d := range []string{dir, signers} {
+		info, err := os.Stat(d)
+		if err != nil {
+			return nil, fmt.Errorf("signers directory %q: %w", d, helper.UnwrapPathError(err))
+		}
+		if err := checkInfo(d, info); err != nil {
+			return nil, err
+		}
+	}
+	var paths []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") || !strings.HasSuffix(e.Name(), ".conf") {
+			continue
+		}
+		path := filepath.Join(signers, e.Name())
+		// Stat follows symlinks.
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("signers file %q: %w", path, helper.UnwrapPathError(err))
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("signers file %q: not a regular file", path)
+		}
+		if err := checkInfo(path, info); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}

@@ -37,16 +37,27 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 		c.commandOpts.Timestamp = ts
 	}
 
-	allowedSignersFile, err := os.Open(c.allowedSignersFile)
-	if err != nil {
-		return nil, []error{
-			fmt.Errorf("failed to open allowed signers file %q: %w",
-				c.allowedSignersFile, helper.UnwrapPathError(err),
-			),
+	if c.allowedSignersFile == "" {
+		paths, err := defaultSignersFiles(log)
+		if err != nil {
+			return nil, []error{err}
 		}
+		c.commandOpts.AllowedSignersFiles, err = readSignersFiles(log, paths, maxSignersSize)
+		if err != nil {
+			return nil, []error{err}
+		}
+	} else {
+		f, err := os.Open(c.allowedSignersFile)
+		if err != nil {
+			return nil, []error{
+				fmt.Errorf("failed to open allowed signers file %q: %w",
+					c.allowedSignersFile, helper.UnwrapPathError(err),
+				),
+			}
+		}
+		defer func() { _ = f.Close() }()
+		c.commandOpts.AllowedSignersFile = f
 	}
-	defer func() { _ = allowedSignersFile.Close() }()
-	c.commandOpts.AllowedSignersFile = allowedSignersFile
 
 	if c.signatureFile == "" {
 		c.commandOpts.SignatureFile = &signatureStdinReader{source: os.Stdin}
@@ -73,7 +84,9 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	}
 	defer func() { _ = verifyFile.Close() }()
 	c.commandOpts.VerifyFile = verifyFile
-	debugInput(log, "allowed signers", c.allowedSignersFile)
+	if c.allowedSignersFile != "" {
+		debugInput(log, "allowed signers", c.allowedSignersFile)
+	}
 	debugInput(log, "signature", c.signatureFile)
 	debugInput(log, "verify", c.verifyFile)
 
@@ -87,9 +100,8 @@ func (c *VerifyCommand) Flags(s *args.Set) {
 	s.String(
 		&c.allowedSignersFile,
 		"allowed-signers-file", "a", "",
-		"read allowed signers, with options, from file (required)",
+		"read allowed signers, with options, from file",
 	)
-	s.Required("allowed-signers-file")
 	s.DenyEmpty("allowed-signers-file")
 
 	s.String(

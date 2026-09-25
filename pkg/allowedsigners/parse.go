@@ -42,17 +42,51 @@ func (f *File) skip(perr ParseError) {
 
 // ParseError describes a malformed line that parsing skipped.
 type ParseError struct {
-	Line int
-	Msg  string
+	Source string
+	Line   int
+	Msg    string
 }
 
 func (e *ParseError) Error() string {
-	return fmt.Sprintf("line=%d: %s", e.Line, e.Msg)
+	return location(e.Source, e.Line) + ": " + e.Msg
+}
+
+func location(source string, line int) string {
+	if source == "" {
+		return fmt.Sprintf("line=%d", line)
+	}
+	return fmt.Sprintf("file=%q line=%d", source, line)
 }
 
 // Parse reads an allowed signers file from r.
 func Parse(r io.Reader) (*File, error) {
 	return parseWithMaxLineSize(r, maxLineSize)
+}
+
+// ParseSource is Parse with source recorded on every entry and skipped line.
+func ParseSource(r io.Reader, source string) (*File, error) {
+	f, err := Parse(r)
+	if err != nil {
+		return nil, err
+	}
+	for i := range f.Entries {
+		f.Entries[i].Source = source
+	}
+	for i := range f.Skipped {
+		f.Skipped[i].Source = source
+	}
+	return f, nil
+}
+
+// Append adds g after f, as if g's lines followed f's in one file.
+func (f *File) Append(g *File) {
+	f.Entries = append(f.Entries, g.Entries...)
+	for _, perr := range g.Skipped {
+		if len(f.Skipped) < maxSkippedRecorded {
+			f.Skipped = append(f.Skipped, perr)
+		}
+	}
+	f.SkippedCount += g.SkippedCount
 }
 
 func parseWithMaxLineSize(r io.Reader, maxLineSize int) (*File, error) {

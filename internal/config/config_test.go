@@ -7,6 +7,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -118,5 +119,62 @@ func TestLoad(t *testing.T) {
 	}
 	if _, err := Load(dir); err == nil {
 		t.Errorf("Load() error = nil when config is a directory, want an error")
+	}
+}
+
+func TestSignersFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	if got, err := SignersFiles(dir); got != nil || err != nil {
+		t.Errorf("SignersFiles() = %q, %v without a signers directory, want nothing", got, err)
+	}
+
+	signers := filepath.Join(dir, SignersDirName)
+	if err := os.Mkdir(signers, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := SignersFiles(dir); got != nil || err != nil {
+		t.Errorf("SignersFiles() = %q, %v for an empty directory, want nothing", got, err)
+	}
+
+	// Dotfiles are never examined, so a hidden directory is no error.
+	if err := os.Mkdir(filepath.Join(signers, ".dir.conf"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"b.conf", "A.conf", "a.conf", "10.conf", "9.conf", "c.conf.bak", "d.txt", ".hidden.conf"} {
+		if err := os.WriteFile(filepath.Join(signers, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("b.conf", filepath.Join(signers, "e.conf")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SignersFiles(dir)
+	if err != nil {
+		t.Fatalf("SignersFiles() error = %v", err)
+	}
+	var want []string
+	for _, name := range []string{"10.conf", "9.conf", "A.conf", "a.conf", "b.conf", "e.conf"} {
+		want = append(want, filepath.Join(signers, name))
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("SignersFiles() = %q, want %q", got, want)
+	}
+
+	if err := os.Mkdir(filepath.Join(signers, "f.conf"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SignersFiles(dir); err == nil || !strings.Contains(err.Error(), "f.conf") {
+		t.Errorf("SignersFiles() error = %v with a directory named *.conf, want it reported", err)
+	}
+	if err := os.Remove(filepath.Join(signers, "f.conf")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink("missing", filepath.Join(signers, "g.conf")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SignersFiles(dir); err == nil || !strings.Contains(err.Error(), "g.conf") {
+		t.Errorf("SignersFiles() error = %v with a dangling symlink, want it reported", err)
 	}
 }

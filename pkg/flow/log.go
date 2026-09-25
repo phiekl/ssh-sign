@@ -43,6 +43,7 @@ type entryValue struct {
 
 func (v entryValue) LogValue() slog.Value {
 	return slog.GroupValue(
+		sourceAttr(v.ent.Source),
 		slog.Int("line", v.ent.Line),
 		slog.String("principal", v.ent.Principal),
 		slog.String("type", v.ent.KeyType),
@@ -58,4 +59,12 @@ func timeText(t *time.Time) string {
 		return ""
 	}
 	return t.Format(time.RFC3339)
+}
+
+// sourceAttr names an allowed signers file. slog drops it when empty.
+func sourceAttr(source string) slog.Attr {
+	if source == "" {
+		return slog.Attr{}
+	}
+	return slog.String("file", source)
 }

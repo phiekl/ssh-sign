@@ -310,7 +310,7 @@ Enabling JSON output for the last one gives:
 
 #### Options
 ```
-  -a, --allowed-signers-file   read allowed signers, with options, from file (required)
+  -a, --allowed-signers-file   read allowed signers, with options, from file
   -f, --verify-file            read data to verify from file (required)
   -s, --signature-file         read signature from file instead of stdin
   -n, --namespace              require a signature with specified namespace
@@ -346,6 +346,14 @@ Enabling JSON output for the last one gives:
 > a trailing `Z` are interpreted in the local time zone, matching `ssh-keygen`.
 > For reproducible CI results, include an RFC3339 offset in the `-t` value and
 > append `Z` to timestamps in the allowed signers file.
+
+#### Signers directory
+
+When `ssh-sign verify` is run without `--allowed-signers-file`, all `*.conf`
+files in `$SSH_SIGN_CONFIG_DIR/signers/` (`~/.ssh/sign/signers/` by default)
+are loaded in lexical order, as if they were concatenated as a single allowed
+signers file. The total size of the files must not exceed 64 MiB.
+
 
 #### Example
 

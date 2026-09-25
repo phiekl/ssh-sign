@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"pxy.se/go/ssh-sign/pkg/allowedsigners"
@@ -15,17 +16,20 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
-// VerifyOpts configures Verify. AllowedSignersFile, SignatureFile and
-// VerifyFile are required.
+// VerifyOpts configures Verify. SignatureFile, VerifyFile and either
+// AllowedSignersFile or AllowedSignersFiles are required.
 type VerifyOpts struct {
 	AllowedSignersFile io.Reader
-	Log                *slog.Logger
-	Namespace          string
-	NoNamespace        bool
-	Principal          string
-	SignatureFile      io.Reader
-	Timestamp          time.Time
-	VerifyFile         io.Reader
+	// AllowedSignersFiles are read in order as one allowed signers file.
+	// Messages name the file of each line.
+	AllowedSignersFiles []NamedReader
+	Log                 *slog.Logger
+	Namespace           string
+	NoNamespace         bool
+	Principal           string
+	SignatureFile       io.Reader
+	Timestamp           time.Time
+	VerifyFile          io.Reader
 }
 
 // VerifyResult holds the results of Verify.
@@ -54,8 +58,20 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		return nil, []error{fmt.Errorf("options are required")}
 	}
 
-	if err := requireReader(opts.AllowedSignersFile, "allowed signers file"); err != nil {
-		return nil, []error{err}
+	switch {
+	case len(opts.AllowedSignersFiles) == 0:
+		if err := requireReader(opts.AllowedSignersFile, "allowed signers file"); err != nil {
+			return nil, []error{err}
+		}
+	case !isNil(opts.AllowedSignersFile):
+		return nil, []error{fmt.Errorf(
+			"allowed signers file and allowed signers files are mutually exclusive",
+		)}
+	}
+	for _, f := range opts.AllowedSignersFiles {
+		if err := requireReader(f.Reader, "allowed signers file "+strconv.Quote(f.Name)); err != nil {
+			return nil, []error{err}
+		}
 	}
 	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
 		return nil, []error{err}
@@ -80,7 +96,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		"timestamp", timestamp.Format(time.RFC3339),
 	)
 
-	parsed, err := parseAllowedSigners(opts.Log, opts.AllowedSignersFile)
+	parsed, err := parseAllowedSigners(opts.Log, opts.AllowedSignersFile, opts.AllowedSignersFiles)
 	if err != nil {
 		return nil, []error{err}
 	}
@@ -132,18 +148,32 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	return &res, errs
 }
 
-// parseAllowedSigners parses the file and logs entries and errors.
-func parseAllowedSigners(log *slog.Logger, r io.Reader) (*allowedsigners.File, error) {
-	parsed, err := allowedsigners.Parse(r)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing allowed signers file: %w", err)
+// parseAllowedSigners parses r, or else files, and logs entries and errors.
+func parseAllowedSigners(
+	log *slog.Logger, r io.Reader, files []NamedReader,
+) (*allowedsigners.File, error) {
+	parsed := &allowedsigners.File{}
+	if len(files) == 0 {
+		var err error
+		parsed, err = allowedsigners.Parse(r)
+		if err != nil {
+			return nil, fmt.Errorf("failed parsing allowed signers file: %w", err)
+		}
+	}
+	for _, f := range files {
+		p, err := allowedsigners.ParseSource(f.Reader, f.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed parsing allowed signers file %q: %w", f.Name, err)
+		}
+		parsed.Append(p)
 	}
 	cli.Debug(log, cli.LevelDebug2, "verify: parsed allowed signers",
 		"entries", len(parsed.Entries), "skipped", parsed.SkippedCount,
 	)
 	for i := range parsed.Skipped {
+		skipped := &parsed.Skipped[i]
 		cli.Debug(log, cli.LevelDebug1, "verify: skipped allowed signers line",
-			"line", parsed.Skipped[i].Line, "reason", parsed.Skipped[i].Msg,
+			sourceAttr(skipped.Source), "line", skipped.Line, "reason", skipped.Msg,
 		)
 	}
 	for i := range parsed.Entries {
@@ -184,7 +214,7 @@ func matchSigner(
 		cli.Debug(opts.Log, cli.LevelDebug1, "verify: no allowed signers entry matched")
 	default:
 		cli.Debug(opts.Log, cli.LevelDebug1, "verify: matched allowed signers entry",
-			"line", ent.Line, "principal", ent.Principal,
+			sourceAttr(ent.Source), "line", ent.Line, "principal", ent.Principal,
 			"namespace_restricted", restricted,
 		)
 	}
