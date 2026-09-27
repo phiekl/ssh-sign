@@ -39,6 +39,22 @@ type VerifyResult struct {
 	Namespace      string `json:"namespace"`
 	Principal      string `json:"principal"`
 	Verification   string `json:"verification"`
+	// Entry is the matched allowed signers entry, if any.
+	Entry *VerifyEntry `json:"entry,omitempty"`
+}
+
+// VerifyEntry locates an allowed signers entry.
+type VerifyEntry struct {
+	// File is empty for an unnamed reader.
+	File string `json:"file,omitempty"`
+	Line int    `json:"line"`
+}
+
+func (e VerifyEntry) String() string {
+	if e.File == "" {
+		return fmt.Sprintf("line %d", e.Line)
+	}
+	return fmt.Sprintf("%s:%d", e.File, e.Line)
 }
 
 func (r VerifyResult) String() string {
@@ -50,13 +66,17 @@ func (r VerifyResult) ColorString() string {
 }
 
 func (r VerifyResult) fields() []cli.Field {
-	return []cli.Field{
+	fields := []cli.Field{
 		cli.KV("principal", r.Principal),
 		cli.StatusKV("authentication", r.Authentication),
 		cli.KV("namespace", r.Namespace),
 		cli.StatusKV("designation", r.Designation),
 		cli.StatusKV("verification", r.Verification),
 	}
+	if r.Entry != nil {
+		fields = append(fields, cli.KV("entry", r.Entry.String()))
+	}
+	return fields
 }
 
 // Verify checks a signature against an allowed signers file.
@@ -120,6 +140,9 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	var errs []error
 
 	ent, restricted, matchErr := matchSigner(opts, parsed, sig, timestamp)
+	if ent != nil {
+		res.Entry = &VerifyEntry{File: ent.Source, Line: ent.Line}
+	}
 
 	res.Designation, err = resolveDesignation(opts, sig, ent, restricted, matchErr)
 	if err != nil {

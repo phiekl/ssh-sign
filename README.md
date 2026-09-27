@@ -80,6 +80,7 @@ Empty lines and lines starting with `#` are ignored.
 | `namespace` | the signature's namespace (`verify` only; run `inspect` to view it when using `check`) |
 | `designation` | result of checking the namespace against `-n` or allowed signers: `valid`, `invalid` or `disabled` |
 | `verification` | result of verifying the signature: `valid` or `invalid` |
+| `entry` | with `verify`, the matched allowed signers entry as `file:line` |
 
 `disabled` means that the corresponding check was not requested. With `check`,
 `-K` disables `authentication` and `-N` disables `designation`. With `verify`,
@@ -384,6 +385,7 @@ $ ssh-sign verify -a allowed_signers -f data -n file -p test1@localhost < data.s
  namespace      = file
  designation    = valid
  verification   = valid
+ entry          = allowed_signers:1
 $ ssh-sign verify -a allowed_signers -f data -n file -p test2@localhost < data.sig
 error: verify: principal "test2@localhost" not found within allowed signers
 ```
@@ -412,6 +414,7 @@ $ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2026-01-15 < 
  namespace      = file
  designation    = valid
  verification   = valid
+ entry          = allowed_signers:1
 $ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2025-12-31 < data.sig
 error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: file="allowed_signers" line=1: not yet valid
 ```
@@ -424,7 +427,11 @@ JSON output for a successful verification with `-n file`:
     "authentication": "valid",
     "namespace": "file",
     "designation": "valid",
-    "verification": "valid"
+    "verification": "valid",
+    "entry": {
+      "file": "allowed_signers",
+      "line": 1
+    }
   }
 }
 ```

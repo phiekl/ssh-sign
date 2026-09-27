@@ -1756,6 +1756,51 @@ func TestVerifyNamesTheAllowedSignersFileOfALine(t *testing.T) {
 	}
 }
 
+func TestVerifyReportsMatchedEntry(t *testing.T) {
+	f := newFixture(t, "file")
+	f.writeAllowed(t, "# comment", f.principal+" "+f.keyLine())
+	args := []string{"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file"}
+
+	stdout, stderr, code := run(t, args...)
+	if want := " entry          = " + f.allowed + ":2\n"; code != 0 || !strings.HasSuffix(stdout, want) {
+		t.Errorf("code=%d stdout=%q stderr=%q, want it to end with %q", code, stdout, stderr, want)
+	}
+
+	stdout, _, _ = run(t, append(args, "-j")...)
+	result, _ := decodeJSON(t, stdout)["result"].(map[string]any)
+	entry, _ := result["entry"].(map[string]any)
+	if entry["file"] != f.allowed || entry["line"] != 2.0 {
+		t.Errorf("entry = %v, want file %q line 2", result["entry"], f.allowed)
+	}
+
+	// A matched entry is reported with an invalid signature too.
+	stdout, _, code = run(t, "verify", "-j", "-a", f.allowed, "-f", f.allowed, "-s", f.signature, "-n", "file")
+	result, _ = decodeJSON(t, stdout)["result"].(map[string]any)
+	if code != 1 || result["verification"] != "invalid" || result["entry"] == nil {
+		t.Errorf("code=%d result=%v, want an invalid verification with entry", code, result)
+	}
+
+	f.writeAllowed(t, f.principal+" "+otherKeyLine)
+	stdout, _, _ = run(t, append(args, "-j")...)
+	result, _ = decodeJSON(t, stdout)["result"].(map[string]any)
+	if _, ok := result["entry"]; ok {
+		t.Errorf("result = %v, want no entry", result)
+	}
+}
+
+func TestVerifyReportsMatchedSignersFileEntry(t *testing.T) {
+	f := newFixture(t, "file")
+	signers := writeSigners(t, map[string]string{
+		"a.conf": "\n",
+		"b.conf": "# comment\n" + f.principal + " " + f.keyLine() + "\n",
+	})
+
+	stdout, stderr, code := run(t, "verify", "-f", f.data, "-s", f.signature, "-n", "file")
+	if want := " entry          = " + filepath.Join(signers, "b.conf") + ":2\n"; code != 0 || !strings.HasSuffix(stdout, want) {
+		t.Errorf("code=%d stdout=%q stderr=%q, want it to end with %q", code, stdout, stderr, want)
+	}
+}
+
 func TestVerifyWithoutAllowedSigners(t *testing.T) {
 	f := newFixture(t, "file")
 	args := []string{"verify", "-f", f.data, "-s", f.signature, "-n", "file"}

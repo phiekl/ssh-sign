@@ -184,7 +184,8 @@ func TestColorOnTTY(t *testing.T) {
 		" authentication = \x1b[32mvalid\x1b[0m\n" +
 		" namespace      = file\n" +
 		" designation    = \x1b[32mvalid\x1b[0m\n" +
-		" verification   = \x1b[32mvalid\x1b[0m\n"
+		" verification   = \x1b[32mvalid\x1b[0m\n" +
+		" entry          = " + f.allowed + ":1\n"
 	if code != 0 || out != want {
 		t.Errorf("verify: code=%d output=%q, want %q", code, out, want)
 	}

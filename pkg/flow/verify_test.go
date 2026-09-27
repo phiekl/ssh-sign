@@ -540,3 +540,52 @@ func TestVerifyRejectsBothAllowedSignersInputs(t *testing.T) {
 		t.Errorf("Verify() errors = %v, want the conflict reported", errs)
 	}
 }
+
+func TestVerifyReportsMatchedEntry(t *testing.T) {
+	s := sign(t, "git")
+	allowed := "# comment\nalice@example.com " + s.keyLine + "\n"
+
+	res, errs := Verify(s.verifyOpts(allowed, "git"))
+	if len(errs) != 0 {
+		t.Fatalf("Verify() errors = %v, want none", errs)
+	}
+	if want := (&VerifyEntry{Line: 2}); res.Entry == nil || *res.Entry != *want {
+		t.Errorf("Entry = %+v, want %+v", res.Entry, want)
+	}
+	if got, want := res.String(), " entry          = line 2"; !strings.HasSuffix(got, "\n"+want) {
+		t.Errorf("String() = %q, want it to end with %q", got, want)
+	}
+
+	opts := s.verifyOpts("", "git")
+	opts.AllowedSignersFile = nil
+	opts.AllowedSignersFiles = []NamedReader{
+		{Name: "a.conf", Reader: strings.NewReader("\n")},
+		{Name: "b.conf", Reader: strings.NewReader(allowed)},
+	}
+	res, errs = Verify(opts)
+	if len(errs) != 0 {
+		t.Fatalf("Verify() errors = %v, want none", errs)
+	}
+	if want := (&VerifyEntry{File: "b.conf", Line: 2}); res.Entry == nil || *res.Entry != *want {
+		t.Errorf("Entry = %+v, want %+v", res.Entry, want)
+	}
+	if got, want := res.String(), " entry          = b.conf:2"; !strings.HasSuffix(got, "\n"+want) {
+		t.Errorf("String() = %q, want it to end with %q", got, want)
+	}
+}
+
+func TestVerifyOmitsEntryWithoutMatch(t *testing.T) {
+	s := sign(t, "git")
+	other := sign(t, "git")
+
+	res, errs := Verify(s.verifyOpts("alice@example.com "+other.keyLine+"\n", "git"))
+	if len(errs) == 0 {
+		t.Fatal("Verify() errors = none, want an unknown signer")
+	}
+	if res.Entry != nil {
+		t.Errorf("Entry = %+v, want nil", res.Entry)
+	}
+	if strings.Contains(res.String(), "entry") {
+		t.Errorf("String() = %q, want no entry", res.String())
+	}
+}
