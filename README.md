@@ -397,7 +397,7 @@ error: verify: signer public key not found within allowed signers
 ```
 $ echo 'test1@localhost namespaces="abc" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk' > allowed_signers
 $ ssh-sign verify -a allowed_signers -f data -p test1@localhost < data.sig
-error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: line=1: namespace mismatch
+error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: file="allowed_signers" line=1: namespace mismatch
 ```
 
 ```
@@ -405,7 +405,7 @@ $ echo 'test1@localhost namespaces="file",valid-after="20260101",valid-before="2
 $ date
 Tue Feb  3 22:49:14 UTC 2026
 $ ssh-sign verify -a allowed_signers -f data -p test1@localhost < data.sig
-error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: line=1: expired
+error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: file="allowed_signers" line=1: expired
 $ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2026-01-15 < data.sig
  principal      = test1@localhost
  authentication = valid
@@ -413,7 +413,7 @@ $ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2026-01-15 < 
  designation    = valid
  verification   = valid
 $ ssh-sign verify -a allowed_signers -f data -p test1@localhost -t 2025-12-31 < data.sig
-error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: line=1: not yet valid
+error: verify: principal "test1@localhost" found in allowed signers, but failed constraints: file="allowed_signers" line=1: not yet valid
 ```
 
 JSON output for a successful verification with `-n file`:

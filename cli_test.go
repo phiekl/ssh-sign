@@ -1730,6 +1730,32 @@ func TestVerifyNamesTheSignersFileOfALine(t *testing.T) {
 	}
 }
 
+func TestVerifyNamesTheAllowedSignersFileOfALine(t *testing.T) {
+	f := newFixture(t, "file")
+	f.writeAllowed(t, "bad line\n"+f.principal+` valid-before="20200101Z" `+f.keyLine())
+
+	_, stderr, code := run(t,
+		"verify", "-v", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal,
+	)
+	if code != 1 {
+		t.Errorf("exit status = %d, want 1", code)
+	}
+	for _, want := range []string{
+		`failed constraints: file="` + f.allowed + `" line=2: expired`,
+		"skipped allowed signers line file=" + f.allowed + " line=1 ",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+		}
+	}
+
+	f.writeAllowed(t, strings.Repeat("x", 5<<20))
+	_, stderr, _ = run(t, "verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file")
+	if want := `failed parsing allowed signers file "` + f.allowed + `"`; !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to hold %q", stderr, want)
+	}
+}
+
 func TestVerifyWithoutAllowedSigners(t *testing.T) {
 	f := newFixture(t, "file")
 	args := []string{"verify", "-f", f.data, "-s", f.signature, "-n", "file"}

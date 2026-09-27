@@ -56,7 +56,7 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 			}
 		}
 		defer func() { _ = f.Close() }()
-		c.commandOpts.AllowedSignersFile = f
+		c.commandOpts.AllowedSignersFiles = []flow.NamedReader{{Name: c.allowedSignersFile, Reader: f}}
 	}
 
 	c.signatureFile = signatureFileOrDefault(c.signatureFile, c.verifyFile)
