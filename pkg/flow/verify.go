@@ -42,13 +42,21 @@ type VerifyResult struct {
 }
 
 func (r VerifyResult) String() string {
-	return cli.ResultFormatKV(-15, " ", "= ",
+	return cli.ResultFormatKV(-15, " ", "= ", r.fields()...)
+}
+
+func (r VerifyResult) ColorString() string {
+	return cli.ResultFormatKVColor(-15, " ", "= ", r.fields()...)
+}
+
+func (r VerifyResult) fields() []cli.Field {
+	return []cli.Field{
 		cli.KV("principal", r.Principal),
-		cli.KV("authentication", r.Authentication),
+		cli.StatusKV("authentication", r.Authentication),
 		cli.KV("namespace", r.Namespace),
-		cli.KV("designation", r.Designation),
-		cli.KV("verification", r.Verification),
-	)
+		cli.StatusKV("designation", r.Designation),
+		cli.StatusKV("verification", r.Verification),
+	}
 }
 
 // Verify checks a signature against an allowed signers file.

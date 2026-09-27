@@ -36,11 +36,19 @@ type CheckResult struct {
 }
 
 func (r CheckResult) String() string {
-	return cli.ResultFormatKV(-15, " ", "= ",
-		cli.KV("authentication", r.Authentication),
-		cli.KV("designation", r.Designation),
-		cli.KV("verification", r.Verification),
-	)
+	return cli.ResultFormatKV(-15, " ", "= ", r.fields()...)
+}
+
+func (r CheckResult) ColorString() string {
+	return cli.ResultFormatKVColor(-15, " ", "= ", r.fields()...)
+}
+
+func (r CheckResult) fields() []cli.Field {
+	return []cli.Field{
+		cli.StatusKV("authentication", r.Authentication),
+		cli.StatusKV("designation", r.Designation),
+		cli.StatusKV("verification", r.Verification),
+	}
 }
 
 // Check verifies a signature with optional key and namespace checks.

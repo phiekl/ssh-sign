@@ -50,6 +50,9 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("SSH_SIGN_CONFIG_DIR", filepath.Join(dir, "config")); err != nil {
 		panic(err)
 	}
+	if err := os.Unsetenv("NO_COLOR"); err != nil {
+		panic(err)
+	}
 
 	binary = filepath.Join(dir, "ssh-sign")
 	build := exec.Command("go", "build", "-o", binary, ".")

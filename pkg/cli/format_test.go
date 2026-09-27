@@ -110,3 +110,39 @@ func TestResultFormatKVRendersLargeNumbersLiterally(t *testing.T) {
 		t.Errorf("ResultFormatKV() = %q, want %q", got, want)
 	}
 }
+
+func TestResultFormatKVColor(t *testing.T) {
+	fields := []Field{
+		KV("name", "valid"),
+		StatusKV("a", "valid"),
+		StatusKV("b", "invalid"),
+		StatusKV("c", "disabled"),
+		StatusKV("d", "other"),
+	}
+	want := "name = valid\n" +
+		"a    = \x1b[32mvalid\x1b[0m\n" +
+		"b    = \x1b[31minvalid\x1b[0m\n" +
+		"c    = \x1b[33mdisabled\x1b[0m\n" +
+		"d    = other"
+	if got := ResultFormatKVColor(-5, "", "= ", fields...); got != want {
+		t.Errorf("ResultFormatKVColor() =\n%q\nwant\n%q", got, want)
+	}
+	want = "name = valid\na    = valid\nb    = invalid\nc    = disabled\nd    = other"
+	if got := ResultFormatKV(-5, "", "= ", fields...); got != want {
+		t.Errorf("ResultFormatKV() =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestResultFormatKVColorEscapesStatus(t *testing.T) {
+	value := "valid" + string(rune(0x1b)) + "[0m"
+	got := ResultFormatKVColor(-2, "", "= ", StatusKV("a", value))
+	if want := "a = " + strconv.Quote(value); got != want {
+		t.Errorf("ResultFormatKVColor() = %q, want %q", got, want)
+	}
+}
+
+func TestColorError(t *testing.T) {
+	if got, want := ColorError("error: x"), "\x1b[31merror: x\x1b[0m"; got != want {
+		t.Errorf("ColorError() = %q, want %q", got, want)
+	}
+}

@@ -13,8 +13,9 @@ import (
 
 // Field is a single result field rendered by ResultFormatKV.
 type Field struct {
-	Key   string
-	Value any
+	Key    string
+	Value  any
+	status bool
 }
 
 // KV returns a Field for ResultFormatKV.
@@ -22,15 +23,33 @@ func KV(key string, value any) Field {
 	return Field{Key: key, Value: value}
 }
 
+// StatusKV returns a Field whose value ResultFormatKVColor colors.
+func StatusKV(key, value string) Field {
+	return Field{Key: key, Value: value, status: true}
+}
+
 // ResultFormatKV renders fields as "<prefix><key><delim><value>" lines. Each
 // key uses the width specified by pad. Values holding control characters or
 // invalid UTF-8 are quoted.
 func ResultFormatKV(pad int, prefix, delim string, fields ...Field) string {
+	return formatKV(false, pad, prefix, delim, fields...)
+}
+
+// ResultFormatKVColor is ResultFormatKV with status values colored.
+func ResultFormatKVColor(pad int, prefix, delim string, fields ...Field) string {
+	return formatKV(true, pad, prefix, delim, fields...)
+}
+
+func formatKV(color bool, pad int, prefix, delim string, fields ...Field) string {
 	lineFmt := fmt.Sprintf("%s%%%ds%s%%v", prefix, pad, delim)
 
 	lines := make([]string, 0, len(fields))
 	for _, f := range fields {
-		lines = append(lines, fmt.Sprintf(lineFmt, f.Key, escapeControl(f.Value)))
+		value := escapeControl(f.Value)
+		if color && f.status {
+			value = colorStatus(value)
+		}
+		lines = append(lines, fmt.Sprintf(lineFmt, f.Key, value))
 	}
 	return strings.Join(lines, "\n")
 }

@@ -87,6 +87,12 @@ Empty lines and lines starting with `#` are ignored.
 match an allowed signers entry. `designation` is disabled only with `-N`; a
 matching `namespaces=` restriction instead makes it `valid`.
 
+Some values are colored when stdout is a TTY, `valid` becomes green and
+`disabled` becomes yellow. In plain-text mode, the `invalid` value is never
+displayed since it results in an error message on stderr (which is colored red,
+if stderr is a TTY). JSON output is never colored. Set the `NO_COLOR`
+environment variable to a non-empty value to disable all colors.
+
 
 ## Main command
 

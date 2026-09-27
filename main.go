@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"golang.org/x/term"
 	"pxy.se/go/ssh-sign/internal/args"
 	"pxy.se/go/ssh-sign/internal/cmd"
 	"pxy.se/go/ssh-sign/pkg/cli"
@@ -84,7 +85,11 @@ func main() {
 		die(name, res.Error...)
 	}
 	if res.Data != nil {
-		if err := writeOutput(os.Stdout, res.Data.String()); err != nil {
+		out := res.Data.String()
+		if c, ok := res.Data.(cli.ColorStringer); ok && colorEnabled(os.Stdout) {
+			out = c.ColorString()
+		}
+		if err := writeOutput(os.Stdout, out); err != nil {
 			die(name, fmt.Errorf("failed writing output: %w", err))
 		}
 	}
@@ -133,7 +138,17 @@ func dieUsage(prefix string, errs ...error) {
 }
 
 func reportErrors(prefix string, errs ...error) {
+	color := colorEnabled(os.Stderr)
 	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "error: %s: %s\n", prefix, cli.EscapeControl(err.Error()))
+		line := fmt.Sprintf("error: %s: %s", prefix, cli.EscapeControl(err.Error()))
+		if color {
+			line = cli.ColorError(line)
+		}
+		fmt.Fprintln(os.Stderr, line)
 	}
+}
+
+// colorEnabled reports whether f is a terminal and NO_COLOR is unset or empty.
+func colorEnabled(f *os.File) bool {
+	return os.Getenv("NO_COLOR") == "" && term.IsTerminal(int(f.Fd()))
 }
