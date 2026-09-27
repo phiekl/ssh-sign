@@ -72,6 +72,7 @@ func (c *CheckCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 		return nil, errs
 	}
 
+	c.signatureFile = signatureFileOrDefault(c.signatureFile, c.verifyFile)
 	if c.signatureFile == "" {
 		c.commandOpts.SignatureFile = &signatureStdinReader{source: os.Stdin}
 	} else {
@@ -118,7 +119,7 @@ func (c *CheckCommand) Flags(s *args.Set) {
 	s.String(
 		&c.signatureFile,
 		"signature-file", "s", "",
-		"read signature from file instead of stdin",
+		"read signature from file (default stdin, or <verify-file>.sig when stdin=tty)",
 	)
 	s.DenyEmpty("signature-file")
 

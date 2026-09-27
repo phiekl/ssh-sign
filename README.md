@@ -264,13 +264,16 @@ is still visible. JSON reports `flags`, `user_presence`, `user_verification`,
 
 ```
   -f, --verify-file      read data to verify from file (required)
-  -s, --signature-file   read signature from file instead of stdin
+  -s, --signature-file   read signature from file (default stdin, or <verify-file>.sig when stdin=tty)
   -n, --namespace        require a signature with specified namespace (default "file")
   -N, --no-namespace     accept a signature with any namespace
   -k, --auth-key         require a signature created by this public key or config alias
   -K, --no-auth-key      accept a signature created by any public key
   -t, --timestamp        validate this RFC3339/RFC1123 timestamp rather than current time
 ```
+
+Without `-s`, `check` (and also `verify`) reads the signature from stdin, or
+from `<verify-file>.sig` if stdin is a terminal.
 
 > [!NOTE]
 > For `check`, `-t` only affects certificate validity.
@@ -320,7 +323,7 @@ Enabling JSON output for the last one gives:
 ```
   -a, --allowed-signers-file   read allowed signers, with options, from file
   -f, --verify-file            read data to verify from file (required)
-  -s, --signature-file         read signature from file instead of stdin
+  -s, --signature-file         read signature from file (default stdin, or <verify-file>.sig when stdin=tty)
   -n, --namespace              require a signature with specified namespace
   -N, --no-namespace           ignore the signature namespace and allowed signers namespace restrictions
   -p, --principal              allow this signer (email usually) from allowed signers file

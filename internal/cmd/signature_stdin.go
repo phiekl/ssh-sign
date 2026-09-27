@@ -8,9 +8,20 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 
+	"golang.org/x/term"
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
+
+// signatureFileOrDefault returns path, or <verifyFile>.sig when path is
+// empty and stdin is a terminal, as a signature is rarely typed.
+func signatureFileOrDefault(path, verifyFile string) string {
+	if path == "" && term.IsTerminal(int(os.Stdin.Fd())) {
+		return verifyFile + ".sig"
+	}
+	return path
+}
 
 // signatureStdinReader accepts whitespace-only lines before a pasted signature.
 // SignatureRead handles trailing whitespace for both stdin and files.
