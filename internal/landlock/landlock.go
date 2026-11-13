@@ -50,8 +50,8 @@ type abiStatus struct {
 }
 
 // detectedABI mirrors the ABI cap, errata downgrade, and minimum in
-// go-landlock v0.10.1. It is used only for reporting after go-landlock has
-// applied the policy.
+// go-landlock. It is used only for reporting after go-landlock has applied
+// the policy.
 func detectedABI() (abiStatus, error) {
 	kernel, err := kernelABI()
 	if err != nil {
