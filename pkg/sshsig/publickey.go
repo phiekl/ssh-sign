@@ -59,7 +59,7 @@ func ParsePublicKey(pkEnc string) (ssh.PublicKey, error) {
 		return nil, fmt.Errorf("failed decoding %s: %w", QuoteToken(pkEnc), err)
 	}
 
-	pk, err := ssh.ParsePublicKey(pkDec)
+	pk, err := parsePublicKeyBlob(pkDec)
 	if err != nil {
 		// The parser error may repeat a large decoded algorithm name.
 		// QuoteToken limits only the encoded key.

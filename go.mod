@@ -1,6 +1,6 @@
 module pxy.se/go/ssh-sign
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/landlock-lsm/go-landlock v0.11.2

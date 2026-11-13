@@ -22,6 +22,16 @@ func requireProgram(t *testing.T, name string) string {
 	return path
 }
 
+// requireKeyType skips unless ssh-keygen can generate keyType.
+func requireKeyType(t *testing.T, keygen, keyType string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "probe")
+	out, err := exec.Command(keygen, "-q", "-t", keyType, "-N", "", "-f", path).CombinedOutput()
+	if err != nil {
+		t.Skipf("%s cannot generate %s keys: %s", keygen, keyType, strings.TrimSpace(string(out)))
+	}
+}
+
 func runProgram(t *testing.T, stdin string, program string, args ...string) string {
 	t.Helper()
 	command := exec.Command(program, args...)
@@ -112,8 +122,12 @@ func TestBidirectionalOpenSSHInterop(t *testing.T) {
 	sshAdd := requireProgram(t, "ssh-add")
 	startRealSSHAgent(t)
 
-	for _, keyType := range []string{"ed25519", "rsa", "ecdsa"} {
+	// OpenSSH 10.6 added mldsa44-ed25519.
+	for _, keyType := range []string{"ed25519", "rsa", "ecdsa", "mldsa44-ed25519"} {
 		t.Run(keyType, func(t *testing.T) {
+			if keyType == "mldsa44-ed25519" {
+				requireKeyType(t, keygen, keyType)
+			}
 			dir := t.TempDir()
 			key := filepath.Join(dir, "key")
 			dataPath := filepath.Join(dir, "data")

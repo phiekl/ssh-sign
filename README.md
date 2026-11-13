@@ -19,6 +19,15 @@ The SSHSIG protocol is implemented in `pkg/sshsig` using
 `golang.org/x/crypto/ssh` and the standard library. Compatibility is tested by
 signing and verifying with both `ssh-sign` and `ssh-keygen`.
 
+The post-quantum `ssh-mldsa44-ed25519` key type from OpenSSH 10.6 is supported,
+but not yet as a certificate. It is implemented with `crypto/mldsa` and
+`crypto/ed25519` after OpenSSH's
+[ssh-mldsa-eddsa.c](https://github.com/openssh/openssh-portable/blob/V_10_6_P2/ssh-mldsa-eddsa.c),
+which follows
+[draft-miller-sshm-mldsa44-ed25519-composite-sigs-00](https://datatracker.ietf.org/doc/html/draft-miller-sshm-mldsa44-ed25519-composite-sigs-00)
+and
+[draft-ietf-lamps-pq-composite-sigs-18](https://datatracker.ietf.org/doc/html/draft-ietf-lamps-pq-composite-sigs-18).
+
 
 ## Exit status
 

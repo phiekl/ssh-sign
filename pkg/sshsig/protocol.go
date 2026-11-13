@@ -129,6 +129,10 @@ func Sign(in io.Reader, signer ssh.Signer, h HashAlgorithm, namespace string) (*
 	if err := validateNamespace(namespace); err != nil {
 		return nil, err
 	}
+	pk, err := verifiablePublicKey(signer.PublicKey())
+	if err != nil {
+		return nil, err
+	}
 	digest, err := hashMessage(in, h)
 	if err != nil {
 		return nil, err
@@ -139,7 +143,7 @@ func Sign(in io.Reader, signer ssh.Signer, h HashAlgorithm, namespace string) (*
 	}
 	return &Signature{
 		Version:       sigVersion,
-		PublicKey:     signer.PublicKey(),
+		PublicKey:     pk,
 		Namespace:     namespace,
 		HashAlgorithm: h,
 		Signature:     sig,
@@ -204,7 +208,7 @@ func ParseSignature(blob []byte) (*Signature, error) {
 			"invalid magic preamble %s: expected %q", QuoteToken(preamble), magicPreamble,
 		)
 	}
-	pk, err := ssh.ParsePublicKey([]byte(wire.PublicKey))
+	pk, err := parsePublicKeyBlob([]byte(wire.PublicKey))
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key: %w", boundedError(err))
 	}

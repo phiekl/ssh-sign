@@ -28,6 +28,7 @@ func FuzzSignatureRead(f *testing.F) {
 	}
 
 	f.Add(Armor(sig))
+	f.Add([]byte(goldenMLDSA44Ed25519SHA512))
 	f.Add([]byte(""))
 	f.Add([]byte("-----BEGIN SSH SIGNATURE-----\n-----END SSH SIGNATURE-----\n"))
 	f.Add([]byte("not a signature\n"))
