@@ -5,8 +5,10 @@
 package sshsig
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +106,29 @@ func TestCertificateValidAt(t *testing.T) {
 	}
 }
 
+func TestCertificateValidAtRejectsUnsignedCertificate(t *testing.T) {
+	cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+	cert.SignatureKey = nil
+	cert.Signature = nil
+	if err := CertificateValidAt(cert, time.Now()); err == nil || err.Error() != "certificate signature is missing" {
+		t.Errorf("CertificateValidAt() error = %v, want a missing signature error", err)
+	}
+}
+
+func TestCertificateRejectsDSACASignatures(t *testing.T) {
+	cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+	if err := cert.SignCert(rand.Reader, newDSASigner(t)); err != nil {
+		t.Fatalf("signing certificate: %v", err)
+	}
+	const want = `unsupported certificate signature algorithm "ssh-dss"`
+	if err := CertificateValidAt(cert, time.Now()); err == nil || err.Error() != want {
+		t.Errorf("CertificateValidAt() error = %v, want %q", err, want)
+	}
+	if _, err := ParsePublicKeyLine(PublicKeyString(cert)); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("ParsePublicKeyLine() error = %v, want it to contain %q", err, want)
+	}
+}
+
 // wrappedKey mimics agent.Key by wrapping a public key blob.
 type wrappedKey struct {
 	format string
@@ -160,5 +185,165 @@ func TestCertificateValidAtIgnoresPlainKeys(t *testing.T) {
 	}
 	if err := CertificateValidAt(pk, time.Now()); err != nil {
 		t.Errorf("CertificateValidAt() error = %v, want nil for a plain key", err)
+	}
+}
+
+// ssh-keygen checks the CA signature when it parses a certificate.
+func TestCertificateValidAtRejectsAForgedCertificate(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+
+	tampered := testCertificate(t, ssh.UserCert, 0, uint64(ssh.CertTimeInfinity))
+	tampered.ValidPrincipals = []string{"mallory"}
+
+	wrongCA := testCertificate(t, ssh.UserCert, 0, uint64(ssh.CertTimeInfinity))
+	wrongCA.SignatureKey = testCertificate(t, ssh.UserCert, 0, 0).SignatureKey
+
+	caIsCert := testCertificate(t, ssh.UserCert, 0, uint64(ssh.CertTimeInfinity))
+	caIsCert.SignatureKey = testCertificate(t, ssh.UserCert, 0, 0)
+
+	for name, cert := range map[string]*ssh.Certificate{
+		"tampered principals": tampered,
+		"wrong CA key":        wrongCA,
+		"certificate CA key":  caIsCert,
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := CertificateValidAt(cert, now)
+			if err == nil || !strings.Contains(err.Error(), "certificate signature") {
+				t.Errorf("CertificateValidAt() error = %v, want a certificate signature error", err)
+			}
+			wrapped := wrappedKey{format: cert.Type(), blob: cert.Marshal()}
+			if CertificateValidAt(wrapped, now) == nil {
+				t.Error("CertificateValidAt() accepted a forged certificate behind an agent key")
+			}
+		})
+	}
+}
+
+// reencodedCertificate returns a certificate blob whose permit-pty extension
+// payload is an encoded empty string rather than empty. Go normalises it back
+// on Marshal. With resign, the CA signs the changed bytes.
+func reencodedCertificate(t *testing.T, resign bool) []byte {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	key, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("creating signer: %v", err)
+	}
+	return reencodeCertificate(t, key.PublicKey(), resign)
+}
+
+// reencodeCertificate is reencodedCertificate for the given subject key.
+func reencodeCertificate(t *testing.T, subject ssh.PublicKey, resign bool) []byte {
+	t.Helper()
+	_, caPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generating CA key: %v", err)
+	}
+	ca, err := ssh.NewSignerFromKey(caPriv)
+	if err != nil {
+		t.Fatalf("creating CA signer: %v", err)
+	}
+	cert := &ssh.Certificate{
+		Key:             subject,
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"alice@example.com"},
+		ValidBefore:     ssh.CertTimeInfinity,
+		Permissions:     ssh.Permissions{Extensions: map[string]string{"permit-pty": ""}},
+	}
+	if err := cert.SignCert(rand.Reader, ca); err != nil {
+		t.Fatalf("signing certificate: %v", err)
+	}
+
+	field := func(payload string) []byte {
+		return ssh.Marshal(struct{ B []byte }{ssh.Marshal(struct{ N, P string }{"permit-pty", payload})})
+	}
+	blob := cert.Marshal()
+	sigField := ssh.Marshal(struct{ B []byte }{ssh.Marshal(cert.Signature)})
+	signed := bytes.Replace(blob[:len(blob)-len(sigField)], field(""), field("\x00\x00\x00\x00"), 1)
+	if bytes.Equal(signed, blob[:len(blob)-len(sigField)]) {
+		t.Fatal("extension field not found")
+	}
+	if resign {
+		sig, err := ca.Sign(rand.Reader, signed)
+		if err != nil {
+			t.Fatalf("re-signing: %v", err)
+		}
+		sigField = ssh.Marshal(struct{ B []byte }{ssh.Marshal(sig)})
+	}
+	return append(signed, sigField...)
+}
+
+// The CA signs the received bytes, which Go's Marshal may not reproduce.
+func TestCertificateSignatureCoversTheReceivedEncoding(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	for name, tt := range map[string]struct {
+		resign bool
+		valid  bool
+	}{
+		"changed without re-signing": {resign: false, valid: false},
+		"changed and re-signed":      {resign: true, valid: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			blob := reencodedCertificate(t, tt.resign)
+
+			pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(blob))
+			if (err == nil) != tt.valid {
+				t.Errorf("ParsePublicKey() error = %v, want valid %v", err, tt.valid)
+			}
+
+			pk, err = parseKeyBlob(blob)
+			if err != nil {
+				t.Fatalf("parseKeyBlob() error = %v", err)
+			}
+			if !bytes.Equal(pk.Marshal(), blob) {
+				t.Error("Marshal() does not return the received encoding")
+			}
+			if err := CertificateValidAt(pk, now); (err == nil) != tt.valid {
+				t.Errorf("CertificateValidAt() error = %v, want valid %v", err, tt.valid)
+			}
+		})
+	}
+}
+
+// Like OpenSSH, certificates are equal only if their encodings are.
+func TestPublicKeyEqualComparesTheReceivedEncoding(t *testing.T) {
+	blob := reencodedCertificate(t, true)
+	pk, err := parseKeyBlob(blob)
+	if err != nil {
+		t.Fatalf("parseKeyBlob() error = %v", err)
+	}
+	normalised, err := ssh.ParsePublicKey(blob)
+	if err != nil {
+		t.Fatalf("ssh.ParsePublicKey() error = %v", err)
+	}
+	if PublicKeyEqual(pk, normalised) {
+		t.Error("PublicKeyEqual() = true for differently encoded certificates")
+	}
+}
+
+// Changing a certificate obtained from AsCertificate must not change what
+// the received key authorizes; only its CA-signed encoding counts.
+func TestAsCertificateReturnsACopy(t *testing.T) {
+	blob := reencodedCertificate(t, true)
+	pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(blob))
+	if err != nil {
+		t.Fatalf("ParsePublicKey() error = %v", err)
+	}
+	cert, err := AsCertificate(pk)
+	if err != nil {
+		t.Fatalf("AsCertificate() error = %v", err)
+	}
+	cert.ValidPrincipals[0] = "mallory@example.com"
+	cert.ValidPrincipals = append(cert.ValidPrincipals, "mallory@example.com")
+
+	again, err := AsCertificate(pk)
+	if err != nil {
+		t.Fatalf("AsCertificate() error = %v", err)
+	}
+	if len(again.ValidPrincipals) != 1 || again.ValidPrincipals[0] != "alice@example.com" {
+		t.Errorf("ValidPrincipals = %q after changing a copy, want [alice@example.com]", again.ValidPrincipals)
 	}
 }

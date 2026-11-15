@@ -5,11 +5,17 @@
 package sshsig
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // agentCertSigner wraps a certificate key like an agent. honourAlgorithm
@@ -82,5 +88,48 @@ func TestSignatureCreateRejectsSHA1FromAnAgent(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "RSA signature format") {
 		t.Errorf("SignatureCreate() error = %v, want it to name the RSA format", err)
+	}
+}
+
+// Signing through the agent with an RSA certificate must embed the
+// certificate as received, which the CA signed.
+func TestAgentSignerKeepsTheRSACertificateEncoding(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating RSA key: %v", err)
+	}
+	keyring := agent.NewKeyring()
+	if err := keyring.Add(agent.AddedKey{PrivateKey: privateKey}); err != nil {
+		t.Fatalf("adding key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatalf("creating signer: %v", err)
+	}
+	blob := reencodeCertificate(t, signer.PublicKey(), true)
+	pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(blob))
+	if err != nil {
+		t.Fatalf("ParsePublicKey() error = %v", err)
+	}
+
+	certSigner, err := AgentSigner(nil, nil, keyring, pk)
+	if err != nil {
+		t.Fatalf("AgentSigner() error = %v", err)
+	}
+	sig, err := SignatureCreate(certSigner, "file", strings.NewReader("data\n"))
+	if err != nil {
+		t.Fatalf("SignatureCreate() error = %v", err)
+	}
+	if !bytes.Equal(sig.PublicKey.Marshal(), blob) {
+		t.Error("signature public key is not the certificate as received")
+	}
+	if err := CertificateValidAt(sig.PublicKey, time.Now()); err != nil {
+		t.Errorf("CertificateValidAt() error = %v", err)
+	}
+	if sig.Signature.Format != ssh.KeyAlgoRSASHA512 {
+		t.Errorf("signature format = %q, want %q", sig.Signature.Format, ssh.KeyAlgoRSASHA512)
+	}
+	if err := SignatureVerify(strings.NewReader("data\n"), sig); err != nil {
+		t.Errorf("SignatureVerify() error = %v", err)
 	}
 }

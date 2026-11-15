@@ -208,7 +208,9 @@ func ParseSignature(blob []byte) (*Signature, error) {
 			"invalid magic preamble %s: expected %q", QuoteToken(preamble), magicPreamble,
 		)
 	}
-	pk, err := parsePublicKeyBlob([]byte(wire.PublicKey))
+	// CertificateValidAt checks a certificate's CA signature later, so a
+	// forged one can still be inspected.
+	pk, err := parseKeyBlob([]byte(wire.PublicKey))
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key: %w", boundedError(err))
 	}

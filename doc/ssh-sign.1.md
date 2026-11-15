@@ -49,7 +49,8 @@ files, so the key must be available through the agent.
 
 Connecting to the agent and listing its keys each have a 30-second timeout.
 The signing request can wait indefinitely for hardware interaction such as a
-touch or PIN. A signing certificate must be a currently valid user certificate.
+touch or PIN. A signing certificate must be a currently valid user certificate
+with a valid CA signature.
 
 - **-f**, **--data-file** *file*: Read the data from *file*. Default is stdin.
 - **-k**, **--sign-key** *key*: Select the agent key. Defaults to **sign.key**
@@ -149,9 +150,9 @@ bytes of blank lines, as left by pasting into a terminal. A signature file
 must start with the header.
 
 When a certificate is checked, it must be a user certificate valid at the
-chosen time. Authentication compares the full certificate against the
-expected key or allowed signers entry. Its CA signature and embedded
-principals are outside that check.
+chosen time, with a valid CA signature. Authentication compares the full
+certificate against the expected key or allowed signers entry. Its embedded
+principals are not checked.
 
 ## Files
 

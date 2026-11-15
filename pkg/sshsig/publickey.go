@@ -59,13 +59,19 @@ func ParsePublicKey(pkEnc string) (ssh.PublicKey, error) {
 		return nil, fmt.Errorf("failed decoding %s: %w", QuoteToken(pkEnc), err)
 	}
 
-	pk, err := parsePublicKeyBlob(pkDec)
+	pk, err := parseKeyBlob(pkDec)
 	if err != nil {
 		// The parser error may repeat a large decoded algorithm name.
 		// QuoteToken limits only the encoded key.
 		return nil, fmt.Errorf(
 			"failed parsing pubkey %s: %w", QuoteToken(pkEnc), boundedError(err),
 		)
+	}
+	// Like ssh-keygen, reject a certificate the CA did not sign.
+	if cert, _ := AsCertificate(pk); cert != nil {
+		if err := certificateSignatureValid(pk, cert); err != nil {
+			return nil, fmt.Errorf("pubkey %s: %w", QuoteToken(pkEnc), err)
+		}
 	}
 	return pk, nil
 }
@@ -95,7 +101,7 @@ func NewPublicKeyInfo(pk ssh.PublicKey) PublicKeyInfo {
 
 // securityKeyApplication reads the application embedded in a FIDO public key.
 func securityKeyApplication(pk ssh.PublicKey) *string {
-	if cert, _ := asCertificate(pk); cert != nil {
+	if cert, _ := AsCertificate(pk); cert != nil {
 		pk = cert.Key
 	}
 	switch pk.Type() {

@@ -81,15 +81,17 @@ func agentSigner(
 	// OpenSSH agents may ignore RSA-SHA2 flags when asked to sign using a
 	// certificate key blob. Rebuild the certificate signer over the listed
 	// underlying RSA key so algorithm selection is sent for that plain key.
-	if cert, ok := pk.(*ssh.Certificate); ok && cert.Key.Type() == ssh.KeyAlgoRSA {
+	if cert, _ := AsCertificate(pk); cert != nil && cert.Key.Type() == ssh.KeyAlgoRSA {
 		for _, s := range signers {
 			if !PublicKeyEqual(cert.Key, s.PublicKey()) {
 				continue
 			}
-			certSigner, err := ssh.NewCertSigner(cert, s)
-			if err != nil {
-				return nil, fmt.Errorf("failed constructing RSA certificate signer: %w", err)
+			algorithmSigner, ok := s.(ssh.AlgorithmSigner)
+			if !ok {
+				return nil, fmt.Errorf("RSA signer does not support selecting a SHA-2 algorithm")
 			}
+			// Unlike ssh.NewCertSigner, keep pk's encoding, which the CA signed.
+			certSigner := certificateSigner{AlgorithmSigner: algorithmSigner, pk: pk}
 			debug(log, levelDebug1, "agent: matched certificate key",
 				"type", cert.Type(), "fingerprint", ssh.FingerprintSHA256(cert.Key),
 			)
@@ -110,3 +112,11 @@ func agentSigner(
 		"no key matched %q", strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pk))),
 	)
 }
+
+// certificateSigner signs with a plain key as the certificate pk.
+type certificateSigner struct {
+	ssh.AlgorithmSigner
+	pk ssh.PublicKey
+}
+
+func (s certificateSigner) PublicKey() ssh.PublicKey { return s.pk }

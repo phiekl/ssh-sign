@@ -5,6 +5,7 @@
 package sshsig
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -15,19 +16,22 @@ import (
 // certificateSuffix ends every OpenSSH certificate key type.
 const certificateSuffix = "-cert-v01@openssh.com"
 
-// CertificateValidAt requires a user certificate valid at the given time,
-// with ValidAfter inclusive and ValidBefore exclusive. Plain keys are ignored.
-// It does not check the CA signature or certificate principals.
+// CertificateValidAt requires a user certificate with a valid CA signature,
+// valid at the given time, with ValidAfter inclusive and ValidBefore exclusive.
+// Plain keys are ignored. It does not check the certificate principals.
 func CertificateValidAt(pk ssh.PublicKey, at time.Time) error {
 	if pk == nil {
 		return fmt.Errorf("a public key is required")
 	}
-	cert, err := asCertificate(pk)
+	cert, err := AsCertificate(pk)
 	if err != nil {
 		return err
 	}
 	if cert == nil {
 		return nil
+	}
+	if err := certificateSignatureValid(pk, cert); err != nil {
+		return err
 	}
 	if cert.CertType != ssh.UserCert {
 		return fmt.Errorf(
@@ -48,9 +52,66 @@ func CertificateValidAt(pk ssh.PublicKey, at time.Time) error {
 	return nil
 }
 
-// asCertificate unwraps concrete or agent-held certificates.
+// certificateKey keeps a certificate's received encoding, which the CA signed
+// and which ssh.Certificate.Marshal may normalise. The parsed certificate is
+// not exposed, so its fields cannot diverge from the encoding.
+type certificateKey struct {
+	cert *ssh.Certificate
+	blob []byte
+}
+
+func (k *certificateKey) Type() string { return k.cert.Type() }
+
+func (k *certificateKey) Marshal() []byte { return bytes.Clone(k.blob) }
+
+func (k *certificateKey) Verify(data []byte, sig *ssh.Signature) error {
+	return k.cert.Verify(data, sig)
+}
+
+// parseKeyBlob parses a public key and keeps the encoding of a certificate.
+func parseKeyBlob(blob []byte) (ssh.PublicKey, error) {
+	pk, err := parsePublicKeyBlob(blob)
+	if err != nil {
+		return nil, err
+	}
+	if cert, ok := pk.(*ssh.Certificate); ok {
+		return &certificateKey{cert: cert, blob: bytes.Clone(blob)}, nil
+	}
+	return pk, nil
+}
+
+// certificateSignatureValid checks the CA signature over pk's encoding of
+// cert, as ssh-keygen does when parsing a certificate. ssh.CertChecker would
+// also reject critical options.
+func certificateSignatureValid(pk ssh.PublicKey, cert *ssh.Certificate) error {
+	if cert.Signature == nil || cert.SignatureKey == nil {
+		return fmt.Errorf("certificate signature is missing")
+	}
+	if strings.HasSuffix(cert.SignatureKey.Type(), certificateSuffix) {
+		return fmt.Errorf("certificate signature key is a certificate")
+	}
+	if cert.SignatureKey.Type() == ssh.InsecureKeyAlgoDSA ||
+		cert.Signature.Format == ssh.InsecureKeyAlgoDSA {
+		return fmt.Errorf("unsupported certificate signature algorithm %q", ssh.InsecureKeyAlgoDSA)
+	}
+	blob := pk.Marshal()
+	// The signature is the last field. Its encoding is canonical, since the
+	// parser rejects trailing data within it.
+	sigField := ssh.Marshal(struct{ Signature []byte }{ssh.Marshal(cert.Signature)})
+	if !bytes.HasSuffix(blob, sigField) {
+		return fmt.Errorf("certificate signature is malformed")
+	}
+	signed := blob[:len(blob)-len(sigField)]
+	if err := cert.SignatureKey.Verify(signed, cert.Signature); err != nil {
+		return fmt.Errorf("certificate signature is invalid: %w", boundedError(err))
+	}
+	return nil
+}
+
+// AsCertificate unwraps concrete or agent-held certificates.
 // It returns nil for plain keys and an error for malformed certificate blobs.
-func asCertificate(pk ssh.PublicKey) (*ssh.Certificate, error) {
+// Other than for a *ssh.Certificate, it parses a new copy of pk's encoding.
+func AsCertificate(pk ssh.PublicKey) (*ssh.Certificate, error) {
 	if cert, ok := pk.(*ssh.Certificate); ok {
 		return cert, nil
 	}

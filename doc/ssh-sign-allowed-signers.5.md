@@ -154,8 +154,8 @@ form. The type must match the encoded key. For example, a line with `ssh-rsa`
 before an Ed25519 key is skipped.
 
 To trust a certificate, give its type and encoded data. It must be a user
-certificate valid at verification time. `ssh-sign` does not check its CA
-signature or its own principals.
+certificate valid at verification time, with a valid CA signature. Its own
+principals are not checked.
 
 
 ## Comment
