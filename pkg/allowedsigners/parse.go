@@ -214,6 +214,10 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 				sshsig.QuoteToken(e.KeyType), pk.Type()),
 		}
 	}
+	// Stricter than ssh-keygen, which would use the certificate's plain key.
+	if cert, _ := sshsig.AsCertificate(pk); cert != nil && e.Options.CertAuthority {
+		return nil, &ParseError{Line: n, Msg: "cert-authority requires a plain key"}
+	}
 	e.PublicKey = pk
 
 	e.Comment = comment
@@ -238,7 +242,11 @@ func parseOptions(s string) (Options, error) {
 			return o, fmt.Errorf("empty option")
 		}
 		if part == "cert-authority" {
-			return o, fmt.Errorf("%q option is not yet supported", part)
+			if o.CertAuthority {
+				return o, fmt.Errorf("multiple %q clauses", part)
+			}
+			o.CertAuthority = true
+			continue
 		}
 
 		k, v, ok := strings.Cut(part, "=")

@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func requireProgram(t *testing.T, name string) string {
@@ -648,5 +650,200 @@ func TestSHA256OpenSSHInterop(t *testing.T) {
 	if inspected, stderr, code := run(t, "inspect", "-s", signature); code != 0 ||
 		!strings.Contains(inspected, "sha256") {
 		t.Fatalf("sha256 signature metadata: code=%d stdout=%q stderr=%q", code, inspected, stderr)
+	}
+}
+
+// signWithOpenSSHCertificate issues a certificate for key and signs dataPath
+// with it through the agent, returning the certificate's key line and the
+// signature path. Extra arguments go to ssh-keygen -s, e.g. -n and -V.
+func signWithOpenSSHCertificate(
+	t *testing.T, keygen, sshAdd, ca, key, dataPath, name string, extra ...string,
+) (string, string) {
+	t.Helper()
+	args := append([]string{"-q", "-s", ca, "-I", name}, extra...)
+	runProgram(t, "", keygen, append(args, key+".pub")...)
+	certificate, err := os.ReadFile(key + "-cert.pub")
+	if err != nil {
+		t.Fatalf("reading certificate: %v", err)
+	}
+	fields := strings.Fields(string(certificate))
+	// ssh-add loads key-cert.pub with the key, so the agent can sign with it.
+	runProgram(t, "", sshAdd, "-q", key)
+	signed := dataPath + "." + name
+	if err := os.Link(dataPath, signed); err != nil {
+		t.Fatalf("linking data: %v", err)
+	}
+	runProgram(t, "", keygen, "-Y", "sign", "-f", key+"-cert.pub", "-n", "file", signed)
+	return fields[0] + " " + fields[1], signed + ".sig"
+}
+
+func TestCertAuthorityMatchesOpenSSH(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	sshAdd := requireProgram(t, "ssh-add")
+	startRealSSHAgent(t)
+
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key")
+	ca := filepath.Join(dir, "ca")
+	otherCA := filepath.Join(dir, "other-ca")
+	dataPath := filepath.Join(dir, "data")
+	allowed := filepath.Join(dir, "allowed_signers")
+	const data = "cert-authority differential test\n"
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("writing data: %v", err)
+	}
+	generateOpenSSHKey(t, keygen, "ed25519", key)
+	caLine := generateOpenSSHKey(t, keygen, "ed25519", ca)
+	generateOpenSSHKey(t, keygen, "ed25519", otherCA)
+
+	const principals = "alice@example.com,bob@example.com"
+	sign := func(name string, extra ...string) (string, string) {
+		return signWithOpenSSHCertificate(t, keygen, sshAdd, ca, key, dataPath, name, extra...)
+	}
+	goodLine, good := sign("good", "-n", principals, "-V", "-1d:+1d")
+	// The agent can refuse to sign with an expired or not-yet-valid certificate.
+	// Exercise both cases by changing the verification time instead.
+	now := time.Now().UTC()
+	_, noPrincipals := sign("no-principals", "-V", "-1d:+1d")
+	_, host := sign("host", "-h", "-n", principals, "-V", "-1d:+1d")
+	_, starPrincipal := sign("star", "-n", "*", "-V", "-1d:+1d")
+	_, foreign := signWithOpenSSHCertificate(t, keygen, sshAdd, otherCA, key, dataPath,
+		"foreign", "-n", principals, "-V", "-1d:+1d")
+	plain := filepath.Join(dir, "data.plain")
+	if err := os.Link(dataPath, plain); err != nil {
+		t.Fatalf("linking data: %v", err)
+	}
+	runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", "file", plain)
+	plain += ".sig"
+	byCA := filepath.Join(dir, "data.ca")
+	if err := os.Link(dataPath, byCA); err != nil {
+		t.Fatalf("linking data: %v", err)
+	}
+	runProgram(t, "", keygen, "-Y", "sign", "-f", ca, "-n", "file", byCA)
+	byCA += ".sig"
+
+	tests := []struct {
+		name, line, principal, signature string
+		wantAccepted                     bool
+		verifyTime                       time.Time
+		// stricter marks an entry that only ssh-keygen should accept.
+		stricter bool
+	}{
+		{name: "listed principal", line: "alice@example.com cert-authority " + caLine,
+			principal: "alice@example.com", signature: good, wantAccepted: true},
+		{name: "wildcard line", line: "*@example.com cert-authority " + caLine,
+			principal: "bob@example.com", signature: good, wantAccepted: true},
+		{name: "principal not in the line", line: "alice@example.com cert-authority " + caLine,
+			principal: "bob@example.com", signature: good},
+		{name: "principal not in the certificate", line: "* cert-authority " + caLine,
+			principal: "carol@example.com", signature: good},
+		{name: "requested principal is not a pattern", line: "* cert-authority " + caLine,
+			principal: "alice@*", signature: good},
+		{name: "certificate principal is not a pattern", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: starPrincipal},
+		{name: "expired certificate", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: good, verifyTime: now.Add(48 * time.Hour)},
+		{name: "future certificate", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: good, verifyTime: now.Add(-48 * time.Hour)},
+		{name: "no certificate principals", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: noPrincipals},
+		{name: "host certificate", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: host},
+		{name: "another CA", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: foreign},
+		{name: "plain key signature", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: plain},
+		{name: "signed by the CA key", line: "* cert-authority " + caLine,
+			principal: "alice@example.com", signature: byCA},
+		{name: "namespace allowed", line: `* cert-authority,namespaces="file" ` + caLine,
+			principal: "alice@example.com", signature: good, wantAccepted: true},
+		{name: "namespace denied", line: `* namespaces="git",cert-authority ` + caLine,
+			principal: "alice@example.com", signature: good},
+		{name: "entry expired", line: `* cert-authority,valid-before="20200101Z" ` + caLine,
+			principal: "alice@example.com", signature: good},
+		{name: "falls through to the certificate",
+			line:      `* cert-authority,namespaces="git" ` + caLine + "\nalice@example.com " + goodLine,
+			principal: "alice@example.com", signature: good, wantAccepted: true},
+		{name: "falls through to the CA",
+			line:      "carol@example.com cert-authority " + caLine + "\n* cert-authority " + caLine,
+			principal: "alice@example.com", signature: good, wantAccepted: true},
+		{name: "uppercase option", line: "* CERT-AUTHORITY " + caLine,
+			principal: "alice@example.com", signature: good, stricter: true},
+		{name: "repeated option", line: "* cert-authority,cert-authority " + caLine,
+			principal: "alice@example.com", signature: good, stricter: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := os.WriteFile(allowed, []byte(tt.line+"\n"), 0o600); err != nil {
+				t.Fatalf("writing allowed signers: %v", err)
+			}
+			ourArgs := []string{"verify", "-a", allowed, "-f", dataPath, "-s", tt.signature,
+				"-n", "file", "-p", tt.principal}
+			openSSHArgs := []string{"-Y", "verify", "-f", allowed, "-I", tt.principal,
+				"-n", "file", "-s", tt.signature}
+			if !tt.verifyTime.IsZero() {
+				ourArgs = append(ourArgs, "-t", tt.verifyTime.Format(time.RFC3339))
+				openSSHArgs = append(openSSHArgs, "-O", "verify-time="+tt.verifyTime.Format("20060102150405Z"))
+			}
+			_, _, ourCode := run(t, ourArgs...)
+			openSSHOutput, openSSHCode := runProgramStatus(t, data, keygen, openSSHArgs...)
+			if wantOpenSSH := tt.wantAccepted || tt.stricter; (openSSHCode == 0) != wantOpenSSH {
+				t.Errorf("OpenSSH accepted = %v, want %v (OpenSSH output: %q)",
+					openSSHCode == 0, wantOpenSSH, openSSHOutput)
+			}
+			if (ourCode == 0) != tt.wantAccepted {
+				t.Errorf("accepted = %v, want %v", ourCode == 0, tt.wantAccepted)
+			}
+		})
+	}
+
+	// Without -p, report what ssh-keygen -Y find-principals prints, except
+	// that ssh-keygen ignores exclusions there.
+	for _, tt := range []struct {
+		principals, want string
+		stricter         bool
+	}{
+		{principals: "*", want: principals},
+		{principals: "alice@example.com,carol@example.com", want: "alice@example.com"},
+		{principals: "alice@example.com,*", want: principals},
+		{principals: "carol@example.com"},
+		{principals: "carol@example.com,,alice@example.com"},
+		{principals: "!alice@example.com"},
+		{principals: "!alice@example.com,*", want: "bob@example.com", stricter: true},
+		{principals: "!alice@example.com,!bob@example.com,*", stricter: true},
+	} {
+		t.Run("find-principals "+tt.principals, func(t *testing.T) {
+			line := tt.principals + " cert-authority " + caLine + "\n"
+			if err := os.WriteFile(allowed, []byte(line), 0o600); err != nil {
+				t.Fatalf("writing allowed signers: %v", err)
+			}
+			stdout, _, ourCode := run(t, "verify", "-j", "-a", allowed, "-f", dataPath, "-s", good,
+				"-n", "file")
+			openSSHOutput, openSSHCode := runProgramStatus(t, "", keygen, "-Y", "find-principals",
+				"-f", allowed, "-s", good)
+			var got, found []string
+			if ourCode == 0 {
+				result, _ := decodeJSON(t, stdout)["result"].(map[string]any)
+				principal, _ := result["principal"].(string)
+				got = strings.Split(principal, ",")
+			}
+			if openSSHCode == 0 {
+				found = strings.Fields(openSSHOutput)
+				slices.Sort(found)
+				found = slices.Compact(found)
+			}
+			if strings.Join(got, ",") != tt.want {
+				t.Errorf("principals = %q, want %q", got, tt.want)
+			}
+			if !tt.stricter && !slices.Equal(got, found) {
+				t.Errorf("principals = %q, OpenSSH found %q", got, found)
+			}
+			for _, p := range got {
+				if !slices.Contains(found, p) {
+					t.Errorf("principal %q not found by OpenSSH (output: %q)", p, openSSHOutput)
+				}
+			}
+		})
 	}
 }

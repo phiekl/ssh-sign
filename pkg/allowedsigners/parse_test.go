@@ -420,7 +420,7 @@ func TestParseSkipsMalformedLines(t *testing.T) {
 		"unknown option":     `alice@example.com bogus="x" ` + testKey,
 		"uppercase option":   `alice@example.com NAMESPACES="git" ` + testKey,
 		"mixed-case option":  `alice@example.com NameSpaces="git" ` + testKey,
-		"cert-authority":     "alice@example.com cert-authority " + testKey,
+		"repeated CA":        "alice@example.com cert-authority,cert-authority " + testKey,
 		"uppercase CA":       "alice@example.com CERT-AUTHORITY " + testKey,
 		"mixed-case CA":      "alice@example.com Cert-Authority " + testKey,
 		"unterminated quote": `alice@example.com namespaces="git ` + testKey,
@@ -449,7 +449,7 @@ func TestParseSkipsMalformedLines(t *testing.T) {
 // Valid entries remain usable after a malformed line.
 func TestParseKeepsGoodEntriesPastABadLine(t *testing.T) {
 	f, err := Parse(strings.NewReader(
-		"bob@example.com cert-authority " + testKey + "\n" +
+		`bob@example.com bogus="x" ` + testKey + "\n" +
 			"alice@example.com " + testKey + "\n",
 	))
 	if err != nil {
@@ -462,7 +462,7 @@ func TestParseKeepsGoodEntriesPastABadLine(t *testing.T) {
 		t.Errorf("Principal = %q, want %q", f.Entries[0].Principal, "alice@example.com")
 	}
 	if len(f.Skipped) != 1 || f.Skipped[0].Line != 1 {
-		t.Errorf("Skipped = %v, want the cert-authority line recorded", f.Skipped)
+		t.Errorf("Skipped = %v, want the unknown option line recorded", f.Skipped)
 	}
 }
 

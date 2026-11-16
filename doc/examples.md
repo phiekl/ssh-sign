@@ -247,6 +247,57 @@ cat result.json
 cat verify.log
 ```
 
+## Trust a certificate authority
+
+Create a CA key and issue a user certificate for `key`, valid for the
+principal `alice@example.com`. Add the key to the agent again so that it also
+loads the certificate, then sign with the certificate.
+
+```sh
+ssh-keygen -q -t ed25519 -N '' -f ca
+ssh-keygen -q -s ca -I alice -n alice@example.com -z 1 key.pub
+ssh-add key
+ssh-sign sign -k "$(cat key-cert.pub)" -f data > cert.sig
+```
+
+A `cert-authority` entry trusts the user certificates the CA signs. The
+requested principal must match the entry and be listed in the certificate, so
+the first verification succeeds and the second fails. A signature made with
+the plain key, without the certificate, does not match the entry either.
+
+```sh
+printf '*@example.com cert-authority %s\n' "$(cat ca.pub)" > ca_signers
+ssh-sign verify -a ca_signers -p alice@example.com -n file -f data -s cert.sig
+ssh-sign verify -a ca_signers -p bob@example.com -n file -f data -s cert.sig
+ssh-sign verify -a ca_signers -p alice@example.com -n file -f data -s data.sig
+```
+
+Without `-p`, the certificate principals that match the entry are reported.
+JSON lists them separately, as a certificate principal may contain a comma.
+
+```sh
+ssh-sign verify -j -a ca_signers -n file -f data -s cert.sig
+```
+
+```json
+{
+  "result": {
+    "authentication": "disabled",
+    "designation": "valid",
+    "namespace": "file",
+    "principal": "alice@example.com",
+    "principals": [
+      "alice@example.com"
+    ],
+    "verification": "valid",
+    "entry": {
+      "file": "ca_signers",
+      "line": 1
+    }
+  }
+}
+```
+
 ## Use an alias and a default signers directory
 
 Use a configuration directory inside the scratch directory. The `work`

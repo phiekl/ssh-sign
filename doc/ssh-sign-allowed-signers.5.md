@@ -116,6 +116,8 @@ inside values: `namespaces="a b"` is valid, but `namespaces="a", "b"` is not.
 - **namespaces="LIST"**: Limits the signature namespaces accepted for this key.
 - **valid-after="TIME"**: Applies from this time onwards, inclusive.
 - **valid-before="TIME"**: Applies up to this time, inclusive.
+- **cert-authority**: Trusts the key as a CA that signs user certificates.
+  See [Certificate authorities](#certificate-authorities) under KEY.
 
 This entry allows two namespaces from the start of 2026 UTC.
 
@@ -124,7 +126,7 @@ alice@example.com namespaces="git,file",valid-after="20260101Z" ssh-ed25519 AAAA
 ```
 
 The line is skipped if an option is repeated, an option is unsupported, or
-`valid-before` is at or before `valid-after`. `cert-authority` is unsupported.
+`valid-before` is at or before `valid-after`.
 
 Namespace patterns use the same syntax as principal patterns. For example,
 `namespaces="file-*,!file-secret"` allows names starting with `file-`, except
@@ -157,6 +159,22 @@ To trust a certificate, give its type and encoded data. It must be a user
 certificate valid at verification time, with a valid CA signature. Its own
 principals are not checked.
 
+### Certificate authorities
+
+With the `cert-authority` option, the key is a CA, and the entry matches user
+certificates the CA signed rather than the key itself:
+
+```
+*@example.com cert-authority ssh-ed25519 AAAAC3Nza...
+```
+
+The certificate must be valid at verification time and list at least one
+principal. With `-p`, the requested identity must match the entry's principal
+patterns and be listed in the certificate exactly. Certificate principals are
+not patterns. Without `-p`, at least one certificate principal must match the
+entry's patterns, and those principals are reported. The CA key must be a
+plain key, not a certificate.
+
 
 ## Comment
 
@@ -170,9 +188,13 @@ line, including comments.
 `verify` searches entries in file order. An entry must meet all these
 conditions:
 
-1. The entry's public key equals the signature's key.
-2. If `-p` was given, the requested identity matches the principal list.
-   Without `-p`, principal patterns are ignored.
+1. The entry's public key equals the signature's key or, for a
+   `cert-authority` entry, signed the signature's certificate.
+2. If `-p` was given, the requested identity matches the entry's principal
+   patterns. For a `cert-authority` entry, it must also be listed in the
+   certificate. Without `-p`, a `cert-authority` entry requires at least one
+   certificate principal to match its patterns. Other entries match any
+   principal without `-p`.
 3. The entry's `namespaces=` restriction, if any, permits the signature's
    namespace. `-N` skips this.
 4. The verification time falls within the entry's validity window. Use `-t`
@@ -186,10 +208,10 @@ over entries without one, even if they appear earlier. See
 
 ## Differences from ssh-keygen
 
-Each of the following makes `ssh-sign` skip an entry that `ssh-keygen`
-accepts. These differences are deliberate and meant to go only one way:
-`ssh-sign` aims never to accept an entry that `ssh-keygen` rejects. A case
-where it does is a bug.
+In each of the following, `ssh-sign` is stricter than `ssh-keygen`. These
+differences are deliberate and meant to go only one way: `ssh-sign` aims
+never to accept an entry that `ssh-keygen` rejects. A case where it does is a
+bug.
 
 - **Uppercase option names**: Line skipped by `ssh-sign`, which requires
   lowercase option names. `ssh-keygen` ignores case and applies an option
@@ -201,8 +223,14 @@ where it does is a bug.
   separator in the principals field.
 - **Other non-printable characters or invalid UTF-8**: Line skipped by
   `ssh-sign`. `ssh-keygen` may accept them as literal bytes.
-- **cert-authority**: Line skipped by `ssh-sign`, which does not support CA
-  keys. `ssh-keygen` uses this option to mark the key as a CA.
+- **Repeated cert-authority**: Line skipped by `ssh-sign`, as for any
+  repeated option. `ssh-keygen` applies the option.
+- **cert-authority with a certificate key**: Line skipped by `ssh-sign`.
+  `ssh-keygen` uses the certificate's plain key as the CA.
+- **Exclusions without -p**: Honored by `ssh-sign` for `cert-authority`
+  entries. With `!alice,*`, `alice` is never reported as a matching
+  certificate principal. `ssh-keygen -Y find-principals` ignores `!`
+  exclusions for CA entries.
 
 NUL bytes and stray carriage returns can change how fields are read. Other
 non-printable characters can hide or distort an entry. `ssh-sign` skips these

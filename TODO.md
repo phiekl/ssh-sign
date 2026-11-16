@@ -7,4 +7,3 @@ SPDX-License-Identifier: MIT
 # TODO
 
 - [ ] verify: Support checking revoked keys.
-- [ ] verify: Support `cert-authority` entries, currently a skipped line.

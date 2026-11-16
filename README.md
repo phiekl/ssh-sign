@@ -32,8 +32,9 @@ particular namespace, so that a signature made for one purpose is not accepted
 for another.
 
 An allowed signers file tells `verify` which keys to trust and which principals
-they can sign for. Principals are usually email addresses. Each entry can
-also limit the key to certain namespaces or a time window.
+they can sign for. Principals are usually email addresses. An entry can also
+trust a certificate authority to vouch for user certificates, and limit a key
+to certain namespaces or a time window.
 
 Pass `-n` to require a specific namespace. Any `namespaces=` restriction in
 the matching entry still applies. Use `-N` to skip namespace checks entirely.
@@ -106,7 +107,8 @@ all command options.
 trusted signer file format and how entries are matched.
 
 See [more examples](doc/examples.md) for JSON output, verification failures,
-time restrictions, configuration and OpenSSH interoperability.
+time restrictions, certificate authorities, configuration and OpenSSH
+interoperability.
 
 ## Building and testing
 

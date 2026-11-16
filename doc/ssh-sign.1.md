@@ -76,7 +76,9 @@ namespace checks. Key, principal and time checks still apply.
 - **-N**, **--no-namespace**: Skip namespace checks.
 - **-p**, **--principal** *identity*: Require an allowed signers entry that
   matches this identity, typically an email address. With **-p** omitted,
-  the key must match an entry and the entry's principal patterns are reported.
+  the signer must still match an entry, and the entry's principal patterns
+  are reported. For a **cert-authority** entry, the matching certificate
+  principals are reported instead.
 
 The **-f**, **-s** and **-t** options are described under
 [VERIFICATION INPUTS](#verification-inputs).
@@ -151,8 +153,9 @@ must start with the header.
 
 When a certificate is checked, it must be a user certificate valid at the
 chosen time, with a valid CA signature. Authentication compares the full
-certificate against the expected key or allowed signers entry. Its embedded
-principals are not checked.
+certificate against the expected key or allowed signers entry, or, for a
+**cert-authority** entry, the CA key. Embedded principals are checked only
+for **cert-authority** entries.
 
 ## Files
 
@@ -207,8 +210,13 @@ write permissions are rejected.
   Can be **valid**, **invalid** or **disabled**. **-N** disables this check.
 - **verification**: Whether the signature matches the data. Can be
   **valid** or **invalid**.
-- **principal**: With **verify**, the identity requested by **-p**, or the
-  pattern list from the matching entry when no identity was requested.
+- **principal**: With **verify**, the identity requested by **-p**. Without
+  **-p**, the pattern list from the matching entry or, for a
+  **cert-authority** entry, the matching certificate principals separated by
+  commas.
+- **principals**: With **verify** in JSON, the matching certificate
+  principals as a list when a **cert-authority** entry matched without
+  **-p**. A certificate principal may itself contain a comma.
 - **namespace**: With **verify**, the namespace in the signature. Use
   **inspect** to see the namespace when using **check**.
 - **entry**: With **verify**, the matched allowed signers entry, shown as

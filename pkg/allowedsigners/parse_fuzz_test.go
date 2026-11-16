@@ -16,6 +16,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte("alice@example.com " + testKey + "\n"))
 	f.Add([]byte(`alice@example.com namespaces="file,!secret" ` + testKey + ` owner "laptop` + "\n"))
 	f.Add([]byte(`alice@example.com namespaces="unterminated ` + testKey + "\n"))
+	f.Add([]byte(`alice cert-authority,namespaces="git" ` + testKey + "\n"))
 	f.Add([]byte("# comment\n\n"))
 	f.Add([]byte("alice namespaces=\"git\u202e\" " + testKey + "\n"))
 	f.Add([]byte("Jos\u00e9 namespaces=\"\u6587\u4ef6\" " + testKey + "\n"))

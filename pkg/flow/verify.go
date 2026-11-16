@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"pxy.se/go/ssh-sign/pkg/allowedsigners"
@@ -38,7 +39,10 @@ type VerifyResult struct {
 	Designation    string `json:"designation"`
 	Namespace      string `json:"namespace"`
 	Principal      string `json:"principal"`
-	Verification   string `json:"verification"`
+	// Principals lists the certificate principals a cert-authority entry
+	// matched without -p, as one of them may contain a comma.
+	Principals   []string `json:"principals,omitempty"`
+	Verification string   `json:"verification"`
 	// Entry is the matched allowed signers entry, if any.
 	Entry *VerifyEntry `json:"entry,omitempty"`
 }
@@ -152,6 +156,10 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	res.Authentication, res.Principal, err = resolveAuthentication(opts, ent, matchErr)
 	if err != nil {
 		errs = append(errs, err)
+	}
+	if res.Authentication == "disabled" && ent != nil && ent.Options.CertAuthority {
+		res.Principals = ent.CertificatePrincipals(sig.PublicKey)
+		res.Principal = strings.Join(res.Principals, ",")
 	}
 
 	// Enforce the certificate's own validity window too.

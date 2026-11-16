@@ -6,7 +6,10 @@ package allowedsigners
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -84,6 +87,13 @@ func (f *File) matchEntry(
 	var candidates, namespaceMatches, namespaceMismatches int
 	// First usable fallback for namespaceRequired.
 	var unrestricted *Entry
+	readCertificate := sync.OnceValue(func() *ssh.Certificate {
+		cert, _ := sshsig.AsCertificate(pk)
+		return cert
+	})
+	checkCertificate := sync.OnceValue(func() error {
+		return sshsig.CertificateValidAt(pk, ts)
+	})
 
 	for i := range f.Entries {
 		ent := &f.Entries[i]
@@ -91,10 +101,23 @@ func (f *File) matchEntry(
 		if principal != "" && !patternListMatch(ent.Principal, principal) {
 			continue
 		}
-		if !sshsig.PublicKeyEqual(ent.PublicKey, pk) {
+		var authorizationErr error
+		if ent.Options.CertAuthority {
+			cert := readCertificate()
+			if !ent.matchesCA(cert) {
+				continue
+			}
+			authorizationErr = checkCertificate()
+			if authorizationErr == nil {
+				authorizationErr = ent.authorizePrincipal(cert, principal)
+			}
+		} else if !sshsig.PublicKeyEqual(ent.PublicKey, pk) {
 			continue
 		}
 		candidates++
+		if authorizationErr != nil {
+			errs = append(errs, ent.Location()+": certificate not authorized: "+authorizationErr.Error())
+		}
 		restricted := mode != namespaceIgnored && len(ent.Options.Namespaces) > 0
 		if restricted {
 			if !patternsMatch(ent.Options.Namespaces, ns) {
@@ -103,6 +126,9 @@ func (f *File) matchEntry(
 				continue
 			}
 			namespaceMatches++
+		}
+		if authorizationErr != nil {
+			continue
 		}
 		if ent.Options.ValidAfter != nil && ts.Before(*ent.Options.ValidAfter) {
 			errs = append(errs, ent.Location()+": not yet valid")
@@ -134,4 +160,59 @@ func (f *File) matchEntry(
 	}
 
 	return nil, false, nil
+}
+
+// matchesCA reports whether cert names this entry's key as its CA.
+func (e *Entry) matchesCA(cert *ssh.Certificate) bool {
+	return cert != nil && cert.SignatureKey != nil &&
+		sshsig.PublicKeyEqual(e.PublicKey, cert.SignatureKey)
+}
+
+// authorizePrincipal checks whether a valid certificate authorizes a principal.
+func (e *Entry) authorizePrincipal(cert *ssh.Certificate, principal string) error {
+	switch {
+	case len(cert.ValidPrincipals) == 0:
+		return fmt.Errorf("certificate lacks principal list")
+	case principal != "":
+		// Certificate principals are literal names, not patterns.
+		if !slices.Contains(cert.ValidPrincipals, principal) {
+			return fmt.Errorf("name is not a listed principal")
+		}
+	case len(e.matchingPrincipals(cert)) == 0:
+		return fmt.Errorf("no certificate principal matches the entry")
+	}
+	return nil
+}
+
+// CertificatePrincipals returns the principals that match a CA entry's
+// patterns when the certificate names that entry's key as its CA. It returns
+// nil for other entries and keys. Validate the certificate with
+// [sshsig.CertificateValidAt] before relying on these principals.
+//
+// ssh-keygen stops at an empty pattern here and ignores exclusions; honour
+// both, so the result is a subset of what ssh-keygen -Y find-principals finds.
+func (e *Entry) CertificatePrincipals(pk ssh.PublicKey) []string {
+	if !e.Options.CertAuthority {
+		return nil
+	}
+	cert, err := sshsig.AsCertificate(pk)
+	if err != nil || !e.matchesCA(cert) {
+		return nil
+	}
+	return e.matchingPrincipals(cert)
+}
+
+func (e *Entry) matchingPrincipals(cert *ssh.Certificate) []string {
+	patterns := strings.Split(e.Principal, ",")
+	beforeEmpty := patterns
+	if i := slices.Index(patterns, ""); i >= 0 {
+		beforeEmpty = patterns[:i]
+	}
+	var principals []string
+	for _, p := range cert.ValidPrincipals {
+		if patternsMatch(beforeEmpty, p) && patternsMatch(patterns, p) {
+			principals = append(principals, p)
+		}
+	}
+	return principals
 }

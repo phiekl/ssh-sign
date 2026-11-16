@@ -7,6 +7,8 @@ package flow
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,15 +18,21 @@ import (
 )
 
 // certSigned is a signature made with a certificate identity, together with
-// the certificate's own authorized_keys line.
+// the certificate's and its CA's authorized_keys lines.
 type certSigned struct {
 	armored  string
 	certLine string
+	caLine   string
 }
 
 // signWithCertificate signs testData under a certificate with the given
 // window, in seconds since the epoch.
 func signWithCertificate(t *testing.T, validAfter, validBefore uint64) certSigned {
+	t.Helper()
+	return signWithPrincipals(t, validAfter, validBefore, "alice@example.com")
+}
+
+func signWithPrincipals(t *testing.T, validAfter, validBefore uint64, principals ...string) certSigned {
 	t.Helper()
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -48,7 +56,7 @@ func signWithCertificate(t *testing.T, validAfter, validBefore uint64) certSigne
 		Key:             signer.PublicKey(),
 		CertType:        ssh.UserCert,
 		KeyId:           "test",
-		ValidPrincipals: []string{"alice@example.com"},
+		ValidPrincipals: principals,
 		ValidAfter:      validAfter,
 		ValidBefore:     validBefore,
 	}
@@ -67,6 +75,7 @@ func signWithCertificate(t *testing.T, validAfter, validBefore uint64) certSigne
 	return certSigned{
 		armored:  string(sshsig.Armor(sig)),
 		certLine: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert))),
+		caLine:   strings.TrimSpace(string(ssh.MarshalAuthorizedKey(ca.PublicKey()))),
 	}
 }
 
@@ -245,5 +254,73 @@ func TestSignRejectsAnExpiredCertificate(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "signing key certificate expired") {
 		t.Fatalf("Sign() error = %v, want the expired certificate refused", err)
+	}
+}
+
+// Without -p, report the certificate principals the CA entry allows, as
+// ssh-keygen -Y find-principals does, not the entry's pattern-list.
+func TestVerifyReportsCertificatePrincipalsForACertAuthority(t *testing.T) {
+	signed := signWithCertificate(t, 0, uint64(ssh.CertTimeInfinity))
+	allowed := "*@example.com cert-authority " + signed.caLine + "\n"
+
+	tests := []struct {
+		principal, wantPrincipal, wantAuthentication string
+	}{
+		{"", "alice@example.com", "disabled"},
+		{"alice@example.com", "alice@example.com", "valid"},
+		{"bob@example.com", "bob@example.com", "invalid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.principal, func(t *testing.T) {
+			res, errs := Verify(&VerifyOpts{
+				AllowedSignersFile: strings.NewReader(allowed),
+				Namespace:          "git",
+				Principal:          tt.principal,
+				SignatureFile:      strings.NewReader(signed.armored),
+				VerifyFile:         strings.NewReader(testData),
+			})
+			if res == nil {
+				t.Fatalf("Verify() errors = %v", errs)
+			}
+			if res.Principal != tt.wantPrincipal || res.Authentication != tt.wantAuthentication {
+				t.Errorf("Verify() = %+v, errors %v, want principal %q and authentication %q",
+					res, errs, tt.wantPrincipal, tt.wantAuthentication)
+			}
+		})
+	}
+}
+
+// A principal may contain the comma that separates them in principal.
+func TestVerifyListsCertificatePrincipalsInJSON(t *testing.T) {
+	signed := signWithPrincipals(t, 0, uint64(ssh.CertTimeInfinity), "bob@x,admin@x", "carol@x")
+	res, errs := Verify(&VerifyOpts{
+		AllowedSignersFile: strings.NewReader("* cert-authority " + signed.caLine + "\n"),
+		Namespace:          "git",
+		SignatureFile:      strings.NewReader(signed.armored),
+		VerifyFile:         strings.NewReader(testData),
+	})
+	if res == nil {
+		t.Fatalf("Verify() errors = %v", errs)
+	}
+	if want := []string{"bob@x,admin@x", "carol@x"}; !slices.Equal(res.Principals, want) {
+		t.Errorf("Principals = %q, want %q", res.Principals, want)
+	}
+	if res.Principal != "bob@x,admin@x,carol@x" {
+		t.Errorf("Principal = %q, want the joined principals", res.Principal)
+	}
+	out, err := json.Marshal(res)
+	if err != nil || !strings.Contains(string(out), `"principals":["bob@x,admin@x","carol@x"]`) {
+		t.Errorf("json.Marshal() = %s, %v, want the principals listed", out, err)
+	}
+
+	plain := signWithCertificate(t, 0, uint64(ssh.CertTimeInfinity))
+	res, _ = Verify(&VerifyOpts{
+		AllowedSignersFile: strings.NewReader("alice@example.com " + plain.certLine + "\n"),
+		Namespace:          "git",
+		SignatureFile:      strings.NewReader(plain.armored),
+		VerifyFile:         strings.NewReader(testData),
+	})
+	if out, _ := json.Marshal(res); strings.Contains(string(out), "principals") {
+		t.Errorf("json.Marshal() = %s, want no principals for a listed key", out)
 	}
 }

@@ -59,6 +59,9 @@ type Options struct {
 
 	// ValidBefore specifies the time before which the entry is accepted.
 	ValidBefore *time.Time
+
+	// CertAuthority makes the key a CA for user certificates.
+	CertAuthority bool
 }
 
 // Location returns the entry's line, qualified by its source if named.

@@ -24,7 +24,10 @@ deliberate differences, where only `ssh-keygen` may accept. These include
 uppercase option names, stray carriage returns and NUL bytes.
 `TestAllowedSignersUnicodeAndControls` runs a set of Unicode and control
 characters through both tools and checks that `ssh-keygen` accepts each line.
-Invalid UTF-8 and entries outside these sets are not compared.
+`TestCertAuthorityMatchesOpenSSH` does the same for `cert-authority` entries
+and compares the principals reported without `-p` with
+`ssh-keygen -Y find-principals`. Invalid UTF-8 and entries outside these sets
+are not compared.
 
 Armored signatures differ in both directions. Both accept trailing ASCII
 whitespace, such as an extra newline from pasting. `ssh-keygen` ignores any
