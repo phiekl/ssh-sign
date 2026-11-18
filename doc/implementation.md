@@ -29,9 +29,10 @@ and compares the principals reported without `-p` with
 `ssh-keygen -Y find-principals`. Invalid UTF-8 and entries outside these sets
 are not compared.
 
-`TestRevokedKeysMatchOpenSSH` compares revocation lists with
-`ssh-keygen -Y verify -r` in the same way, for both a plain signer key and a
-certificate.
+`TestRevokedKeysMatchOpenSSH` compares text lists and KRLs with
+`ssh-keygen -Y verify -r` in the same way, for a plain signer key and for
+certificates. The KRL cases cover keys, fingerprints, certificate serials,
+serial ranges and key IDs.
 
 Armored signatures differ in both directions. Both accept trailing ASCII
 whitespace, such as an extra newline from pasting. `ssh-keygen` ignores any

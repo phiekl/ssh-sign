@@ -173,12 +173,15 @@ func checkAlias(name, value string) error {
 	return nil
 }
 
+// ErrUnsafePermissions reports a config path that other users could change.
+var ErrUnsafePermissions = errors.New("unsafe permissions")
+
 // SignersDirName is the directory in the config directory whose *.conf files
 // together form the default allowed signers.
 const SignersDirName = "signers"
 
-// RevokedDirName is the directory in the config directory whose *.conf files
-// together form the default revoked keys.
+// RevokedDirName is the directory in the config directory whose *.conf and
+// *.krl files together form the default revoked keys.
 const RevokedDirName = "revoked"
 
 // SignersFiles returns the *.conf files in the signers directory, sorted by

@@ -875,17 +875,12 @@ func TestRevokedKeysMatchOpenSSH(t *testing.T) {
 	caLine := generateOpenSSHKey(t, keygen, "ed25519", ca)
 	otherLine := generateOpenSSHKey(t, keygen, "ed25519", other)
 	certLine, certSig := signWithOpenSSHCertificate(t, keygen, sshAdd, ca, key, dataPath,
-		"cert", "-n", "alice@example.com", "-V", "-1d:+1d")
+		"cert", "-n", "alice@example.com", "-V", "-1d:+1d", "-z", "40")
+	_, renewedSig := signWithOpenSSHCertificate(t, keygen, sshAdd, ca, key, dataPath,
+		"renewed", "-n", "alice@example.com", "-V", "-1d:+1d", "-z", "41")
 	runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", "file", dataPath)
 	plainSig := dataPath + ".sig"
 	writeAllowedSigner(t, allowed, "alice@example.com", keyLine+"\n* cert-authority "+caLine)
-
-	krl := filepath.Join(dir, "krl")
-	runProgram(t, "", keygen, "-q", "-k", "-f", krl, other+".pub")
-	krlData, err := os.ReadFile(krl)
-	if err != nil {
-		t.Fatalf("reading KRL: %v", err)
-	}
 
 	tests := []struct {
 		name, content string
@@ -913,7 +908,6 @@ func TestRevokedKeysMatchOpenSSH(t *testing.T) {
 			revokedPlain: true, revokedCert: true},
 		{name: "options", content: "cert-authority " + otherLine + "\n",
 			revokedPlain: true, revokedCert: true},
-		{name: "KRL", content: string(krlData), revokedPlain: true, revokedCert: true, stricter: true},
 		{name: "NUL starts a line", content: "\x00" + otherLine + "\n",
 			revokedPlain: true, revokedCert: true, stricter: true},
 	}
@@ -944,6 +938,108 @@ func TestRevokedKeysMatchOpenSSH(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
 		check(t, filepath.Join(dir, "missing"), plainSig, true, false)
 	})
+	for _, tt := range []struct {
+		name, spec, authority              string
+		revokePlain, revokeCert, revokeNew bool
+	}{
+		{name: "KRL unrelated key", spec: otherLine},
+		{name: "KRL signer key", spec: keyLine, revokePlain: true, revokeCert: true, revokeNew: true},
+		{name: "KRL CA key", spec: caLine, revokeCert: true, revokeNew: true},
+		{name: "KRL signer SHA1", spec: "sha1: " + keyLine, revokePlain: true, revokeCert: true, revokeNew: true},
+		{name: "KRL CA SHA256", spec: "sha256: " + caLine, revokeCert: true, revokeNew: true},
+		{name: "KRL certificate serial", spec: "serial: 40", authority: ca + ".pub", revokeCert: true},
+		{name: "KRL certificate range", spec: "serial: 40-41", authority: ca + ".pub", revokeCert: true, revokeNew: true},
+		{name: "KRL certificate key ID", spec: "id: cert", authority: ca + ".pub", revokeCert: true},
+		{name: "KRL serial from another CA", spec: "serial: 40", authority: other + ".pub"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := filepath.Join(t.TempDir(), "spec")
+			krl := filepath.Join(filepath.Dir(spec), "revoked.krl")
+			if err := os.WriteFile(spec, []byte(tt.spec+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"-q", "-k", "-f", krl}
+			if tt.authority != "" {
+				args = append(args, "-s", tt.authority)
+			}
+			runProgram(t, "", keygen, append(args, spec)...)
+			check(t, krl, plainSig, tt.revokePlain, false)
+			check(t, krl, certSig, tt.revokeCert, false)
+			check(t, krl, renewedSig, tt.revokeNew, false)
+		})
+	}
+	t.Run("KRL with reserved flags, empty sections and NUL terminators", func(t *testing.T) {
+		record := func(kind byte, data []byte) []byte {
+			return ssh.Marshal(struct {
+				Type byte
+				Data []byte
+			}{kind, data})
+		}
+		extension := ssh.Marshal(struct {
+			Name     string
+			Critical bool
+			Data     []byte
+		}{Name: "optional@example.test\x00"})
+		certificates := ssh.Marshal(struct{ CA, Reserved []byte }{})
+		certificates = append(certificates, record(0x23, nil)...)
+		certificates = append(certificates, record(0x23, ssh.Marshal(struct{ ID string }{"cert\x00"}))...)
+		certificates = append(certificates, record(0x39, extension)...)
+		header := ssh.Marshal(struct {
+			Format                    uint32
+			Version, Generated, Flags uint64
+			Reserved, Comment         string
+		}{Format: 1, Flags: 1, Comment: "comment\x00"})
+		data := append([]byte("SSHKRL\n\x00"), header...)
+		for _, kind := range []byte{2, 3, 5} {
+			data = append(data, record(kind, nil)...)
+		}
+		data = append(data, record(255, extension)...)
+		data = append(data, record(1, certificates)...)
+
+		krl := filepath.Join(t.TempDir(), "revoked.krl")
+		if err := os.WriteFile(krl, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		check(t, krl, plainSig, false, false)
+		check(t, krl, certSig, true, false)
+		check(t, krl, renewedSig, false, false)
+	})
+	// OpenSSH fails to load a KRL whose serial bitmap exceeds 2048 bytes.
+	for _, tt := range []struct {
+		name    string
+		size    int
+		revoked bool
+	}{
+		{name: "KRL largest serial bitmap", size: 2048},
+		{name: "KRL oversized serial bitmap", size: 3000, revoked: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			bits := make([]byte, tt.size)
+			bits[0] = 1
+			bitmap := ssh.Marshal(struct {
+				Offset uint64
+				Bits   []byte
+			}{1000, bits})
+			section := ssh.Marshal(struct {
+				CA, Reserved []byte
+				Type         byte
+				Data         []byte
+			}{Type: 0x22, Data: bitmap})
+			header := ssh.Marshal(struct {
+				Format                    uint32
+				Version, Generated, Flags uint64
+				Reserved, Comment         []byte
+				Type                      byte
+				Data                      []byte
+			}{Format: 1, Type: 1, Data: section})
+			krl := filepath.Join(t.TempDir(), "revoked.krl")
+			if err := os.WriteFile(krl, append([]byte("SSHKRL\n\x00"), header...), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			check(t, krl, plainSig, tt.revoked, false)
+			check(t, krl, certSig, tt.revoked, false)
+		})
+	}
 }
 
 // rawKey is a public key with a fixed encoding.

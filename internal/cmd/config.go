@@ -5,9 +5,10 @@
 package cmd
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -89,21 +90,27 @@ func defaultSignersFiles(log *slog.Logger) ([]string, error) {
 }
 
 // defaultRevokedFiles returns the configured revocation lists.
-func defaultRevokedFiles(log *slog.Logger) ([]string, error) {
+func defaultRevokedFiles(log *slog.Logger) ([]flow.NamedBytes, error) {
 	dir, err := config.Dir()
 	if err != nil {
 		cli.Debug(log, cli.LevelDebug2, "config: no directory", "error", err)
 		return nil, nil
 	}
-	return config.RevokedFiles(dir)
+	paths, err := config.RevokedFiles(dir)
+	var files []flow.NamedBytes
+	if err == nil {
+		files, err = readConfigFiles(log, revokedKind, paths, maxPolicyFilesSize)
+	}
+	// Configured revocations apply with -a and -r too.
+	if errors.Is(err, fs.ErrPermission) || errors.Is(err, config.ErrUnsafePermissions) {
+		return nil, fmt.Errorf("%w (set %s to use another config directory)", err, config.DirEnv)
+	}
+	return files, err
 }
 
-// maxSignersSize bounds the signers files held in memory until parsing.
-const maxSignersSize = 64 << 20
-
-// maxDefaultRevokedFilesSize bounds the combined size of the files preloaded
-// from the config directory.
-const maxDefaultRevokedFilesSize = 64 << 20
+// maxPolicyFilesSize bounds the policy files held in memory until parsing,
+// for the config directory and each of -a and -r.
+const maxPolicyFilesSize = 64 << 20
 
 // fileKind names a kind of config file in messages.
 type fileKind struct {
@@ -119,12 +126,23 @@ var (
 // open until parsing after restrict. Together they may hold at most limit bytes.
 func readConfigFiles(
 	log *slog.Logger, kind fileKind, paths []string, limit int64,
-) ([]flow.NamedReader, error) {
-	var files []flow.NamedReader
+) ([]flow.NamedBytes, error) {
+	return readFiles(log, kind, paths, limit, true)
+}
+
+// readExplicitFile reads a file named on the command line. Like ssh-keygen,
+// it does not check who can write to the file.
+func readExplicitFile(log *slog.Logger, kind fileKind, path string) ([]flow.NamedBytes, error) {
+	return readFiles(log, kind, []string{path}, maxPolicyFilesSize, false)
+}
+
+func readFiles(
+	log *slog.Logger, kind fileKind, paths []string, limit int64, checkPerms bool,
+) ([]flow.NamedBytes, error) {
+	files := make([]flow.NamedBytes, 0, len(paths))
 	remaining := limit
 	for _, path := range paths {
-		debugInput(log, kind.file, path)
-		data, err := readConfigFile(kind, path, remaining)
+		data, err := readFile(log, kind, path, remaining, checkPerms)
 		if err != nil {
 			return nil, err
 		}
@@ -134,39 +152,28 @@ func readConfigFiles(
 			)
 		}
 		remaining -= int64(len(data))
-		files = append(files, flow.NamedReader{Name: path, Reader: bytes.NewReader(data)})
+		files = append(files, flow.NamedBytes{Name: path, Data: data})
 	}
 	return files, nil
 }
 
-func openConfigFile(kind fileKind, path string) (*os.File, error) {
+// readFile reads up to limit+1 bytes, so that the caller can detect overflow.
+func readFile(
+	log *slog.Logger, kind fileKind, path string, limit int64, checkPerms bool,
+) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s file %q: %w",
 			kind.file, path, helper.UnwrapPathError(err),
 		)
 	}
-	return f, nil
-}
-
-func openNamedConfigFile(kind fileKind, path string) (flow.NamedReader, func(), error) {
-	f, err := openConfigFile(kind, path)
-	if err != nil {
-		return flow.NamedReader{}, nil, err
-	}
-	return flow.NamedReader{Name: path, Reader: f}, func() { _ = f.Close() }, nil
-}
-
-// readConfigFile reads at most one byte beyond limit.
-func readConfigFile(kind fileKind, path string, limit int64) ([]byte, error) {
-	f, err := openConfigFile(kind, path)
-	if err != nil {
-		return nil, err
-	}
 	defer func() { _ = f.Close() }()
-	if err := config.CheckOpenFile(f); err != nil {
-		return nil, err
+	if checkPerms {
+		if err := config.CheckOpenFile(f); err != nil {
+			return nil, err
+		}
 	}
+	debugInput(log, kind.file, path)
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed reading %s file %q: %w",

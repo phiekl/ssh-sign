@@ -14,7 +14,8 @@ import (
 	"pxy.se/go/ssh-sign/internal/helper"
 )
 
-// RevokedFiles is SignersFiles for the revoked directory. Unlike a missing directory, a dangling symlink is an error, as
+// RevokedFiles is SignersFiles for the *.conf and *.krl files in the revoked
+// directory. Unlike a missing directory, a dangling symlink is an error, as
 // it would silently drop configured revocations.
 func RevokedFiles(dir string) ([]string, error) {
 	revoked := filepath.Join(dir, RevokedDirName)
@@ -24,7 +25,7 @@ func RevokedFiles(dir string) ([]string, error) {
 		}
 		return nil, nil
 	}
-	return listFiles(dir, RevokedDirName, "revoked", ".conf")
+	return listFiles(dir, RevokedDirName, "revoked", ".conf", ".krl")
 }
 
 // checkBrokenSymlinks looks for a broken symlink among the components of a

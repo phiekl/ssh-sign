@@ -5,10 +5,10 @@
 package flow
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,19 +18,18 @@ import (
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
-// VerifyOpts configures Verify. SignatureFile, VerifyFile and either
-// AllowedSignersFile or AllowedSignersFiles are required.
+// VerifyOpts configures Verify. AllowedSignersFiles, SignatureFile and
+// VerifyFile are required.
 type VerifyOpts struct {
-	AllowedSignersFile io.Reader
 	// AllowedSignersFiles are read in order as one allowed signers file.
 	// Messages name the file of each line.
-	AllowedSignersFiles []NamedReader
+	AllowedSignersFiles []NamedBytes
 	Log                 *slog.Logger
 	Namespace           string
 	NoNamespace         bool
 	Principal           string
 	// RevokedKeysFiles are read in order as one revoked keys list.
-	RevokedKeysFiles []NamedReader
+	RevokedKeysFiles []NamedBytes
 	SignatureFile    io.Reader
 	Timestamp        time.Time
 	VerifyFile       io.Reader
@@ -93,25 +92,8 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		return nil, []error{fmt.Errorf("options are required")}
 	}
 
-	switch {
-	case len(opts.AllowedSignersFiles) == 0:
-		if err := requireReader(opts.AllowedSignersFile, "allowed signers file"); err != nil {
-			return nil, []error{err}
-		}
-	case !isNil(opts.AllowedSignersFile):
-		return nil, []error{fmt.Errorf(
-			"allowed signers file and allowed signers files are mutually exclusive",
-		)}
-	}
-	for _, f := range opts.AllowedSignersFiles {
-		if err := requireReader(f.Reader, "allowed signers file "+strconv.Quote(f.Name)); err != nil {
-			return nil, []error{err}
-		}
-	}
-	for _, f := range opts.RevokedKeysFiles {
-		if err := requireReader(f.Reader, "revoked keys file "+strconv.Quote(f.Name)); err != nil {
-			return nil, []error{err}
-		}
+	if len(opts.AllowedSignersFiles) == 0 {
+		return nil, []error{fmt.Errorf("allowed signers file is required")}
 	}
 	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
 		return nil, []error{err}
@@ -136,7 +118,7 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 		"timestamp", timestamp.Format(time.RFC3339),
 	)
 
-	parsed, err := parseAllowedSigners(opts.Log, opts.AllowedSignersFile, opts.AllowedSignersFiles)
+	parsed, err := parseAllowedSigners(opts.Log, opts.AllowedSignersFiles)
 	if err != nil {
 		return nil, []error{err}
 	}
@@ -182,9 +164,12 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			sourceAttr(key.Source), "line", key.Line, "certificate_authority", ca,
 		)
 		res.Authentication = "invalid"
-		if ca {
+		switch {
+		case ca:
 			errs = append(errs, fmt.Errorf("signer certificate authority is revoked: %s", key.Location()))
-		} else {
+		case key.ByCertificate:
+			errs = append(errs, fmt.Errorf("signer certificate is revoked: %s", key.Location()))
+		default:
 			errs = append(errs, fmt.Errorf("signer public key is revoked: %s", key.Location()))
 		}
 	}
@@ -214,21 +199,15 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	return &res, errs
 }
 
-// parseAllowedSigners parses r, or else files, and logs entries and errors.
-func parseAllowedSigners(
-	log *slog.Logger, r io.Reader, files []NamedReader,
-) (*allowedsigners.File, error) {
+// parseAllowedSigners parses files in order and logs entries and errors.
+func parseAllowedSigners(log *slog.Logger, files []NamedBytes) (*allowedsigners.File, error) {
 	parsed := &allowedsigners.File{}
-	if len(files) == 0 {
-		var err error
-		parsed, err = allowedsigners.Parse(r)
-		if err != nil {
-			return nil, fmt.Errorf("failed parsing allowed signers file: %w", err)
-		}
-	}
 	for _, f := range files {
-		p, err := allowedsigners.ParseSource(f.Reader, f.Name)
-		if err != nil {
+		p, err := allowedsigners.ParseSource(bytes.NewReader(f.Data), f.Name)
+		switch {
+		case err != nil && f.Name == "":
+			return nil, fmt.Errorf("failed parsing allowed signers file: %w", err)
+		case err != nil:
 			return nil, fmt.Errorf("failed parsing allowed signers file %q: %w", f.Name, err)
 		}
 		parsed.Append(p)
@@ -251,17 +230,17 @@ func parseAllowedSigners(
 }
 
 // parseRevokedKeys parses files as one revoked keys list.
-func parseRevokedKeys(log *slog.Logger, files []NamedReader) (*revokedkeys.List, error) {
+func parseRevokedKeys(log *slog.Logger, files []NamedBytes) (*revokedkeys.List, error) {
 	revoked := &revokedkeys.List{}
 	for _, f := range files {
-		l, err := revokedkeys.ParseSource(f.Reader, f.Name)
+		l, err := revokedkeys.ParseBytes(f.Data, f.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed parsing revoked keys: %w", err)
 		}
 		revoked.Append(l)
 	}
 	cli.Debug(log, cli.LevelDebug2, "verify: parsed revoked keys",
-		"files", len(files), "keys", len(revoked.Keys),
+		"files", len(files), "keys", len(revoked.Keys), "krls", revoked.KRLs(),
 	)
 	return revoked, nil
 }

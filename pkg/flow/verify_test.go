@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
@@ -51,10 +52,10 @@ func sign(t *testing.T, namespace string) signed {
 // verifyOpts builds options for a signature that should verify cleanly.
 func (s signed) verifyOpts(allowed, namespace string) *VerifyOpts {
 	return &VerifyOpts{
-		AllowedSignersFile: strings.NewReader(allowed),
-		Namespace:          namespace,
-		SignatureFile:      strings.NewReader(s.armored),
-		VerifyFile:         strings.NewReader(testData),
+		AllowedSignersFiles: []NamedBytes{{Data: []byte(allowed)}},
+		Namespace:           namespace,
+		SignatureFile:       strings.NewReader(s.armored),
+		VerifyFile:          strings.NewReader(testData),
 	}
 }
 
@@ -382,11 +383,6 @@ func TestFlowsRejectMissingReaders(t *testing.T) {
 	readers := map[string]io.Reader{"nil": nil, "typed nil": typedNil}
 
 	for kind, missing := range readers {
-		t.Run(kind+" allowed signers", func(t *testing.T) {
-			opts := s.verifyOpts(allowed, "git")
-			opts.AllowedSignersFile = missing
-			assertMissingReader(t, func() []error { _, errs := Verify(opts); return errs })
-		})
 		t.Run(kind+" verify signature", func(t *testing.T) {
 			opts := s.verifyOpts(allowed, "git")
 			opts.SignatureFile = missing
@@ -473,20 +469,19 @@ func TestVerifyRejectsPinningAndWaivingTogether(t *testing.T) {
 	}
 }
 
-// namedReaders pairs names with contents.
-func namedReaders(pairs ...string) []NamedReader {
-	var readers []NamedReader
+// namedFiles pairs names with contents.
+func namedFiles(pairs ...string) []NamedBytes {
+	var files []NamedBytes
 	for i := 0; i < len(pairs); i += 2 {
-		readers = append(readers, NamedReader{Name: pairs[i], Reader: strings.NewReader(pairs[i+1])})
+		files = append(files, NamedBytes{Name: pairs[i], Data: []byte(pairs[i+1])})
 	}
-	return readers
+	return files
 }
 
 func TestVerifyNamesAllowedSignersFiles(t *testing.T) {
 	s := sign(t, "git")
 	opts := s.verifyOpts("", "git")
-	opts.AllowedSignersFile = nil
-	opts.AllowedSignersFiles = namedReaders(
+	opts.AllowedSignersFiles = namedFiles(
 		"a.conf", `alice@example.com namespaces="email" `+s.keyLine,
 		"b.conf", `alice@example.com valid-before="20200101Z" `+s.keyLine+"\n",
 	)
@@ -501,8 +496,7 @@ func TestVerifyNamesAllowedSignersFiles(t *testing.T) {
 func TestVerifyMatchesALaterAllowedSignersFile(t *testing.T) {
 	s := sign(t, "git")
 	opts := s.verifyOpts("", "")
-	opts.AllowedSignersFile = nil
-	opts.AllowedSignersFiles = namedReaders(
+	opts.AllowedSignersFiles = namedFiles(
 		"a.conf", "alice@example.com "+s.keyLine+"\n",
 		"b.conf", `bob@example.com namespaces="git" `+s.keyLine+"\n",
 	)
@@ -519,7 +513,7 @@ func TestVerifyMatchesALaterAllowedSignersFile(t *testing.T) {
 func TestVerifyRequiresAllowedSigners(t *testing.T) {
 	s := sign(t, "git")
 	opts := s.verifyOpts("", "git")
-	opts.AllowedSignersFile = nil
+	opts.AllowedSignersFiles = nil
 
 	_, errs := Verify(opts)
 	if !strings.Contains(errorText(errs), "allowed signers file is required") {
@@ -527,17 +521,12 @@ func TestVerifyRequiresAllowedSigners(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsBothAllowedSignersInputs(t *testing.T) {
+// An unnamed file keeps the messages of a single anonymous input.
+func TestVerifyReportsUnnamedAllowedSignersFiles(t *testing.T) {
 	s := sign(t, "git")
-	opts := s.verifyOpts("alice@example.com "+s.keyLine+"\n", "git")
-	opts.AllowedSignersFiles = namedReaders("a.conf", "alice@example.com "+s.keyLine+"\n")
-
-	res, errs := Verify(opts)
-	if res != nil {
-		t.Errorf("Verify() result = %+v, want nil", res)
-	}
-	if !strings.Contains(errorText(errs), "mutually exclusive") {
-		t.Errorf("Verify() errors = %v, want the conflict reported", errs)
+	_, errs := Verify(s.verifyOpts(strings.Repeat("x", helper.MaxLineSize+1), "git"))
+	if want := "failed parsing allowed signers file: "; !strings.HasPrefix(errorText(errs), want) {
+		t.Errorf("Verify() errors = %v, want %q", errs, want)
 	}
 }
 
@@ -557,11 +546,7 @@ func TestVerifyReportsMatchedEntry(t *testing.T) {
 	}
 
 	opts := s.verifyOpts("", "git")
-	opts.AllowedSignersFile = nil
-	opts.AllowedSignersFiles = []NamedReader{
-		{Name: "a.conf", Reader: strings.NewReader("\n")},
-		{Name: "b.conf", Reader: strings.NewReader(allowed)},
-	}
+	opts.AllowedSignersFiles = namedFiles("a.conf", "\n", "b.conf", allowed)
 	res, errs = Verify(opts)
 	if len(errs) != 0 {
 		t.Fatalf("Verify() errors = %v, want none", errs)

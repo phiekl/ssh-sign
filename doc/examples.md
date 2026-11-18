@@ -337,8 +337,20 @@ cat ca.pub > revoked_cas
 ssh-sign verify -a ca_signers -r revoked_cas -p alice@example.com -n file -f data -s cert.sig
 ```
 
-Lists in the `revoked/` directory of the configuration directory apply to
-every verification, without `-r`.
+An OpenSSH KRL, created with `ssh-keygen -k`, can also revoke a single
+certificate by serial number or key ID. This one revokes the certificate with
+serial 1 from the CA, so verifying `cert.sig` fails, while `data.sig` from the
+plain key still verifies.
+
+```sh
+printf 'serial: 1\n' > krl_spec
+ssh-keygen -q -k -f revoked.krl -s ca.pub krl_spec
+ssh-sign verify -a ca_signers -r revoked.krl -p alice@example.com -n file -f data -s cert.sig
+ssh-sign verify -a allowed_signers -r revoked.krl -p alice@example.com -n file -f data -s data.sig
+```
+
+Text lists and KRLs in the `revoked/` directory of the configuration
+directory apply to every verification, without `-r`.
 
 ## Exchange signatures with OpenSSH
 

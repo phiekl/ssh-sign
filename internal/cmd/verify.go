@@ -43,35 +43,30 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 		if err != nil {
 			return nil, []error{err}
 		}
-		c.commandOpts.AllowedSignersFiles, err = readConfigFiles(log, signersKind, paths, maxSignersSize)
+		c.commandOpts.AllowedSignersFiles, err = readConfigFiles(log, signersKind, paths, maxPolicyFilesSize)
 		if err != nil {
 			return nil, []error{err}
 		}
 	} else {
-		file, closeFile, err := openNamedConfigFile(signersKind, c.allowedSignersFile)
+		files, err := readExplicitFile(log, signersKind, c.allowedSignersFile)
 		if err != nil {
 			return nil, []error{err}
 		}
-		defer closeFile()
-		c.commandOpts.AllowedSignersFiles = []flow.NamedReader{file}
+		c.commandOpts.AllowedSignersFiles = files
 	}
 
-	paths, err := defaultRevokedFiles(log)
-	if err != nil {
-		return nil, []error{err}
-	}
-	c.commandOpts.RevokedKeysFiles, err = readConfigFiles(log, revokedKind, paths, maxDefaultRevokedFilesSize)
+	revoked, err := defaultRevokedFiles(log)
 	if err != nil {
 		return nil, []error{err}
 	}
 	if c.revokedKeysFile != "" {
-		file, closeFile, err := openNamedConfigFile(revokedKind, c.revokedKeysFile)
+		files, err := readExplicitFile(log, revokedKind, c.revokedKeysFile)
 		if err != nil {
 			return nil, []error{err}
 		}
-		defer closeFile()
-		c.commandOpts.RevokedKeysFiles = append(c.commandOpts.RevokedKeysFiles, file)
+		revoked = append(revoked, files...)
 	}
+	c.commandOpts.RevokedKeysFiles = revoked
 
 	c.signatureFile = signatureFileOrDefault(c.signatureFile, c.verifyFile)
 	if c.signatureFile == "" {
@@ -99,12 +94,6 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	}
 	defer func() { _ = verifyFile.Close() }()
 	c.commandOpts.VerifyFile = verifyFile
-	if c.allowedSignersFile != "" {
-		debugInput(log, "allowed signers", c.allowedSignersFile)
-	}
-	if c.revokedKeysFile != "" {
-		debugInput(log, "revoked keys", c.revokedKeysFile)
-	}
 	debugInput(log, "signature", c.signatureFile)
 	debugInput(log, "verify", c.verifyFile)
 
@@ -125,7 +114,7 @@ func (c *VerifyCommand) Flags(s *args.Set) {
 	s.String(
 		&c.revokedKeysFile,
 		"revoked-keys-file", "r", "",
-		"reject signers whose public key or CA is listed in file",
+		"add revocations from a text list or OpenSSH KRL",
 	)
 	s.DenyEmpty("revoked-keys-file")
 

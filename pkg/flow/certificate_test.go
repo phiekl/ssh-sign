@@ -85,11 +85,11 @@ func TestVerifyRejectsAnExpiredCertificate(t *testing.T) {
 	expired := signWithCertificate(t, 0, uint64(time.Now().Unix()-day))
 
 	opts := &VerifyOpts{
-		AllowedSignersFile: strings.NewReader("alice@example.com " + expired.certLine + "\n"),
-		Namespace:          "git",
-		Principal:          "alice@example.com",
-		SignatureFile:      strings.NewReader(expired.armored),
-		VerifyFile:         strings.NewReader(testData),
+		AllowedSignersFiles: []NamedBytes{{Data: []byte("alice@example.com " + expired.certLine + "\n")}},
+		Namespace:           "git",
+		Principal:           "alice@example.com",
+		SignatureFile:       strings.NewReader(expired.armored),
+		VerifyFile:          strings.NewReader(testData),
 	}
 	res, errs := Verify(opts)
 	if !strings.Contains(errorText(errs), "certificate expired") {
@@ -112,12 +112,12 @@ func TestVerifyAcceptsACertificateWithinTheRequestedTime(t *testing.T) {
 	expired := signWithCertificate(t, validAfter, validBefore)
 
 	opts := &VerifyOpts{
-		AllowedSignersFile: strings.NewReader("alice@example.com " + expired.certLine + "\n"),
-		Namespace:          "git",
-		Principal:          "alice@example.com",
-		SignatureFile:      strings.NewReader(expired.armored),
-		Timestamp:          time.Unix(int64(validAfter)+day, 0),
-		VerifyFile:         strings.NewReader(testData),
+		AllowedSignersFiles: []NamedBytes{{Data: []byte("alice@example.com " + expired.certLine + "\n")}},
+		Namespace:           "git",
+		Principal:           "alice@example.com",
+		SignatureFile:       strings.NewReader(expired.armored),
+		Timestamp:           time.Unix(int64(validAfter)+day, 0),
+		VerifyFile:          strings.NewReader(testData),
 	}
 	res, errs := Verify(opts)
 	if len(errs) != 0 {
@@ -273,11 +273,11 @@ func TestVerifyReportsCertificatePrincipalsForACertAuthority(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.principal, func(t *testing.T) {
 			res, errs := Verify(&VerifyOpts{
-				AllowedSignersFile: strings.NewReader(allowed),
-				Namespace:          "git",
-				Principal:          tt.principal,
-				SignatureFile:      strings.NewReader(signed.armored),
-				VerifyFile:         strings.NewReader(testData),
+				AllowedSignersFiles: []NamedBytes{{Data: []byte(allowed)}},
+				Namespace:           "git",
+				Principal:           tt.principal,
+				SignatureFile:       strings.NewReader(signed.armored),
+				VerifyFile:          strings.NewReader(testData),
 			})
 			if res == nil {
 				t.Fatalf("Verify() errors = %v", errs)
@@ -294,10 +294,10 @@ func TestVerifyReportsCertificatePrincipalsForACertAuthority(t *testing.T) {
 func TestVerifyListsCertificatePrincipalsInJSON(t *testing.T) {
 	signed := signWithPrincipals(t, 0, uint64(ssh.CertTimeInfinity), "bob@x,admin@x", "carol@x")
 	res, errs := Verify(&VerifyOpts{
-		AllowedSignersFile: strings.NewReader("* cert-authority " + signed.caLine + "\n"),
-		Namespace:          "git",
-		SignatureFile:      strings.NewReader(signed.armored),
-		VerifyFile:         strings.NewReader(testData),
+		AllowedSignersFiles: []NamedBytes{{Data: []byte("* cert-authority " + signed.caLine + "\n")}},
+		Namespace:           "git",
+		SignatureFile:       strings.NewReader(signed.armored),
+		VerifyFile:          strings.NewReader(testData),
 	})
 	if res == nil {
 		t.Fatalf("Verify() errors = %v", errs)
@@ -315,10 +315,10 @@ func TestVerifyListsCertificatePrincipalsInJSON(t *testing.T) {
 
 	plain := signWithCertificate(t, 0, uint64(ssh.CertTimeInfinity))
 	res, _ = Verify(&VerifyOpts{
-		AllowedSignersFile: strings.NewReader("alice@example.com " + plain.certLine + "\n"),
-		Namespace:          "git",
-		SignatureFile:      strings.NewReader(plain.armored),
-		VerifyFile:         strings.NewReader(testData),
+		AllowedSignersFiles: []NamedBytes{{Data: []byte("alice@example.com " + plain.certLine + "\n")}},
+		Namespace:           "git",
+		SignatureFile:       strings.NewReader(plain.armored),
+		VerifyFile:          strings.NewReader(testData),
 	})
 	if out, _ := json.Marshal(res); strings.Contains(string(out), "principals") {
 		t.Errorf("json.Marshal() = %s, want no principals for a listed key", out)

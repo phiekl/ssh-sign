@@ -29,17 +29,17 @@ func CheckOpenFile(f *os.File) error {
 func checkInfo(path string, info fs.FileInfo) error {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return fmt.Errorf("unsafe permissions: %q has no known owner", path)
+		return fmt.Errorf("%w: %q has no known owner", ErrUnsafePermissions, path)
 	}
 	return checkOwnerAndMode(path, info.Mode(), st.Uid, uint32(os.Getuid()))
 }
 
 func checkOwnerAndMode(path string, mode fs.FileMode, uid, self uint32) error {
 	if uid != self && uid != 0 {
-		return fmt.Errorf("unsafe permissions: %q is owned by uid %d, not the current user or root", path, uid)
+		return fmt.Errorf("%w: %q is owned by uid %d, not the current user or root", ErrUnsafePermissions, path, uid)
 	}
 	if mode.Perm()&0o022 != 0 {
-		return fmt.Errorf("unsafe permissions: %q is writable by group or others (mode %04o)", path, mode.Perm())
+		return fmt.Errorf("%w: %q is writable by group or others (mode %04o)", ErrUnsafePermissions, path, mode.Perm())
 	}
 	return nil
 }

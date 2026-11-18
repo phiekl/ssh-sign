@@ -5,6 +5,7 @@
 package sshsig
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"strings"
@@ -191,5 +192,52 @@ func TestPublicKeyEqual(t *testing.T) {
 	}
 	if PublicKeyEqual(first, other) {
 		t.Error("PublicKeyEqual() = true for two different keys")
+	}
+}
+
+func TestParsePublicKeyBlob(t *testing.T) {
+	plain := newSigner(t).PublicKey()
+	if pk, err := ParsePublicKeyBlob(plain.Marshal()); err != nil || !PublicKeyEqual(pk, plain) {
+		t.Errorf("ParsePublicKeyBlob() = %v, %v, want the plain key", pk, err)
+	}
+	forged := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+	forged.KeyId = "forged"
+	if _, err := ParsePublicKeyBlob(forged.Marshal()); err == nil ||
+		!strings.Contains(err.Error(), "certificate signature is invalid") {
+		t.Errorf("ParsePublicKeyBlob() error = %v, want an invalid certificate signature", err)
+	}
+	if _, err := ParsePublicKeyBlob([]byte("garbage")); err == nil {
+		t.Error("ParsePublicKeyBlob() error = nil for garbage")
+	}
+}
+
+// The caller may reuse the buffer it passes.
+func TestParsePublicKeyBlobCopiesItsInput(t *testing.T) {
+	signer := newSigner(t)
+	ca := newSigner(t)
+	cert := &ssh.Certificate{Key: signer.PublicKey(), CertType: ssh.UserCert,
+		ValidBefore: ssh.CertTimeInfinity}
+	if err := cert.SignCert(rand.Reader, ca); err != nil {
+		t.Fatal(err)
+	}
+	sig, err := signer.Sign(rand.Reader, []byte("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, key := range map[string]ssh.PublicKey{"plain": signer.PublicKey(), "certificate": cert} {
+		t.Run(name, func(t *testing.T) {
+			blob := key.Marshal()
+			pk, err := ParsePublicKeyBlob(blob)
+			if err != nil {
+				t.Fatalf("ParsePublicKeyBlob() error = %v", err)
+			}
+			clear(blob)
+			if err := pk.Verify([]byte("data"), sig); err != nil {
+				t.Errorf("Verify() after reusing the buffer: %v", err)
+			}
+			if !bytes.Equal(pk.Marshal(), key.Marshal()) {
+				t.Error("Marshal() changed after reusing the buffer")
+			}
+		})
 	}
 }

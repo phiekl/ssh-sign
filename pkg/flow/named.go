@@ -4,10 +4,9 @@
 
 package flow
 
-import "io"
-
-// NamedReader is a reader with a name for messages, such as a file path.
-type NamedReader struct {
-	Name   string
-	Reader io.Reader
+// NamedBytes is the content of an input file with a name for messages, such
+// as its path. An empty name leaves the file unnamed.
+type NamedBytes struct {
+	Name string
+	Data []byte
 }

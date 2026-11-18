@@ -69,13 +69,15 @@ func (k *certificateKey) Verify(data []byte, sig *ssh.Signature) error {
 }
 
 // parseKeyBlob parses a public key and keeps the encoding of a certificate.
+// It copies blob first, as x/crypto/ssh keys can alias their input.
 func parseKeyBlob(blob []byte) (ssh.PublicKey, error) {
+	blob = bytes.Clone(blob)
 	pk, err := parsePublicKeyBlob(blob)
 	if err != nil {
 		return nil, err
 	}
 	if cert, ok := pk.(*ssh.Certificate); ok {
-		return &certificateKey{cert: cert, blob: bytes.Clone(blob)}, nil
+		return &certificateKey{cert: cert, blob: blob}, nil
 	}
 	return pk, nil
 }

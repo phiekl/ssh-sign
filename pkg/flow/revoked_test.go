@@ -5,6 +5,7 @@
 package flow
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,19 +15,17 @@ import (
 )
 
 func verifyRevoked(signed certSigned, revoked ...string) (*VerifyResult, []error) {
-	var files []NamedReader
+	var files []NamedBytes
 	for i, content := range revoked {
-		files = append(files, NamedReader{
-			Name: "revoked" + strconv.Itoa(i+1), Reader: strings.NewReader(content),
-		})
+		files = append(files, NamedBytes{Name: "revoked" + strconv.Itoa(i+1), Data: []byte(content)})
 	}
 	return Verify(&VerifyOpts{
-		AllowedSignersFile: strings.NewReader("* cert-authority " + signed.caLine + "\n"),
-		Namespace:          "git",
-		Principal:          "alice@example.com",
-		RevokedKeysFiles:   files,
-		SignatureFile:      strings.NewReader(signed.armored),
-		VerifyFile:         strings.NewReader(testData),
+		AllowedSignersFiles: []NamedBytes{{Data: []byte("* cert-authority " + signed.caLine + "\n")}},
+		Namespace:           "git",
+		Principal:           "alice@example.com",
+		RevokedKeysFiles:    files,
+		SignatureFile:       strings.NewReader(signed.armored),
+		VerifyFile:          strings.NewReader(testData),
 	})
 }
 
@@ -85,5 +84,43 @@ func TestVerifyFailsOnAMalformedRevokedKeysFile(t *testing.T) {
 	}
 	if want := `failed parsing revoked keys: file="revoked2" line=2: expected a key type and key`; !strings.Contains(errorText(errs), want) {
 		t.Errorf("Verify() errors = %q, want %q", errorText(errs), want)
+	}
+}
+
+// Revoked keys are parsed in place, as a KRL may be large.
+func TestVerifyParsesRevokedKeysInPlace(t *testing.T) {
+	signed := signWithCertificate(t, 0, uint64(ssh.CertTimeInfinity))
+	const size = 8 << 20
+	extension := ssh.Marshal(struct {
+		Name     string
+		Critical bool
+		Data     []byte
+	}{"padding@example.test", false, make([]byte, size)})
+	header := ssh.Marshal(struct {
+		Format                    uint32
+		Version, Generated, Flags uint64
+		Reserved, Comment         string
+	}{Format: 1})
+	krl := append([]byte("SSHKRL\n\x00"), header...)
+	krl = append(krl, ssh.Marshal(struct {
+		Type byte
+		Data []byte
+	}{255, extension})...)
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, errs := Verify(&VerifyOpts{
+		AllowedSignersFiles: []NamedBytes{{Data: []byte("* cert-authority " + signed.caLine + "\n")}},
+		Namespace:           "git",
+		RevokedKeysFiles:    []NamedBytes{{Name: "revoked.krl", Data: krl}},
+		SignatureFile:       strings.NewReader(signed.armored),
+		VerifyFile:          strings.NewReader(testData),
+	})
+	runtime.ReadMemStats(&after)
+	if len(errs) != 0 {
+		t.Fatalf("Verify() errors = %v", errs)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > size/2 {
+		t.Errorf("Verify() allocated %d bytes for a %d byte KRL", allocated, len(krl))
 	}
 }

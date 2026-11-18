@@ -71,7 +71,8 @@ in lexical order, as if they were concatenated into a single allowed signers
 file. Use `-a` to read a specific file instead.
 
 `verify` rejects signers whose key or CA is listed in a revocation list in
-`~/.ssh/sign/revoked/`. Use `-r` to add another list.
+`~/.ssh/sign/revoked/`, either a text list or an OpenSSH KRL. Use `-r` to add
+another list.
 
 ### Landlock sandbox
 

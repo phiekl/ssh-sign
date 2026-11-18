@@ -135,7 +135,7 @@ func TestParseFailsClosed(t *testing.T) {
 	}
 }
 
-func TestParseRejectsKRL(t *testing.T) {
+func TestParseRejectsTruncatedKRL(t *testing.T) {
 	_, err := Parse(strings.NewReader("SSHKRL\n\x00"))
 	if err == nil || !strings.Contains(err.Error(), "KRL") {
 		t.Errorf("Parse() error = %v, want a KRL error", err)

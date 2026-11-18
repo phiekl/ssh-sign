@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2159,7 +2160,7 @@ func TestVerifyFailsOnUnreadableRevokedKeys(t *testing.T) {
 
 	tests := map[string]struct{ path, want string }{
 		"missing":   {filepath.Join(f.dir, "missing"), "failed to open revoked keys file"},
-		"KRL":       {krl, `failed parsing revoked keys: file="` + krl + `": KRL format is not supported`},
+		"KRL":       {krl, `failed parsing revoked keys: file="` + krl + `": invalid KRL header`},
 		"malformed": {malformed, `failed parsing revoked keys: file="` + malformed + `" line=2: invalid ssh public key`},
 	}
 	for name, tt := range tests {
@@ -2203,6 +2204,110 @@ func TestVerifyDefaultsToTheRevokedDirectory(t *testing.T) {
 		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
 	if code != 1 || !strings.Contains(stderr, want) {
 		t.Errorf("exit status = %d with -r, stderr = %q, want 1 and %q", code, stderr, want)
+	}
+}
+
+func TestVerifyReadsKRLsFromTheRevokedDirectory(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	f := newFixture(t, "file")
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	revoked := writeRevoked(t, dir, nil)
+	pub := filepath.Join(f.dir, "key.pub")
+	if err := os.WriteFile(pub, []byte(f.keyLine()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	krl := filepath.Join(revoked, "keys.krl")
+	runProgram(t, "", keygen, "-k", "-f", krl, pub)
+
+	_, stderr, code := run(t, "verify", "-a", f.allowed,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if want := fmt.Sprintf("signer public key is revoked: file=%q", krl); code != 1 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d, stderr = %q, want 1 and %q", code, stderr, want)
+	}
+}
+
+func TestVerboseCountsKRLs(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	f := newFixture(t, "file")
+	pub := filepath.Join(f.dir, "other.pub")
+	if err := os.WriteFile(pub, []byte(otherKeyLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	krl := filepath.Join(f.dir, "keys.krl")
+	runProgram(t, "", keygen, "-k", "-f", krl, pub)
+
+	_, stderr, code := run(t, "verify", "-vv", "-a", f.allowed, "-r", krl,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if want := "verify: parsed revoked keys files=1 keys=0 krls=1"; code != 0 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d, stderr = %q, want 0 and %q", code, stderr, want)
+	}
+}
+
+// An unreadable revoked directory fails verification, even with -a and -r.
+func TestVerifyHintsAtAnUnreadableRevokedDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	f := newFixture(t, "file")
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	revoked := writeRevoked(t, dir, nil)
+	if err := os.Chmod(revoked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(revoked, 0o700) })
+
+	_, stderr, code := run(t, "verify", "-a", f.allowed,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	want := "permission denied (set SSH_SIGN_CONFIG_DIR to use another config directory)"
+	if code != 1 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d, stderr = %q, want 1 and %q", code, stderr, want)
+	}
+}
+
+// -a and -r are read up front, with the limit of the config directory files.
+func TestVerifyBoundsExplicitPolicyFiles(t *testing.T) {
+	f := newFixture(t, "file")
+	large := filepath.Join(f.dir, "large")
+	if err := os.WriteFile(large, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(large, 64<<20+1); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ flag, want string }{
+		{"-a", "signers files exceed 67108864 bytes in total at " + strconv.Quote(large)},
+		{"-r", "revoked keys files exceed 67108864 bytes in total at " + strconv.Quote(large)},
+	} {
+		args := []string{"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file"}
+		if tt.flag == "-a" {
+			args[2] = large
+		} else {
+			args = append(args, "-r", large)
+		}
+		_, stderr, code := run(t, args...)
+		if code != 1 || !strings.Contains(stderr, tt.want) {
+			t.Errorf("%s: exit status = %d, stderr = %q, want 1 and %q", tt.flag, code, stderr, tt.want)
+		}
+	}
+}
+
+// Configured revocations come before -r, whichever list matches.
+func TestVerifyReportsConfiguredRevocationsFirst(t *testing.T) {
+	f := newFixture(t, "file")
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	revoked := writeRevoked(t, dir, map[string]string{"a.conf": f.keyLine() + "\n"})
+	explicit := filepath.Join(f.dir, "explicit")
+	if err := os.WriteFile(explicit, []byte(f.keyLine()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := run(t, "verify", "-a", f.allowed, "-r", explicit,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	want := `signer public key is revoked: file="` + filepath.Join(revoked, "a.conf") + `" line=1`
+	if code != 1 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d, stderr = %q, want 1 and %q", code, stderr, want)
 	}
 }
 

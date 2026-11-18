@@ -82,13 +82,30 @@ func ParsePublicKey(pkEnc string) (ssh.PublicKey, error) {
 			"failed parsing pubkey %s: %w", QuoteToken(pkEnc), boundedError(err),
 		)
 	}
-	// Like ssh-keygen, reject a certificate the CA did not sign.
-	if cert, _ := AsCertificate(pk); cert != nil {
-		if err := certificateSignatureValid(pk, cert); err != nil {
-			return nil, fmt.Errorf("pubkey %s: %w", QuoteToken(pkEnc), err)
-		}
+	if err := certificateSigned(pk); err != nil {
+		return nil, fmt.Errorf("pubkey %s: %w", QuoteToken(pkEnc), err)
 	}
 	return pk, nil
+}
+
+// ParsePublicKeyBlob is ParsePublicKey for a key in wire format.
+func ParsePublicKeyBlob(blob []byte) (ssh.PublicKey, error) {
+	pk, err := parseKeyBlob(blob)
+	if err != nil {
+		return nil, boundedError(err)
+	}
+	if err := certificateSigned(pk); err != nil {
+		return nil, err
+	}
+	return pk, nil
+}
+
+// certificateSigned rejects a certificate the CA did not sign, like ssh-keygen.
+func certificateSigned(pk ssh.PublicKey) error {
+	if cert, _ := AsCertificate(pk); cert != nil {
+		return certificateSignatureValid(pk, cert)
+	}
+	return nil
 }
 
 // PublicKeyString converts a public key to its authorized_keys format.

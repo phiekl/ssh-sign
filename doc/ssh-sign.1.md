@@ -68,12 +68,13 @@ entry with a **namespaces=** restriction is required. Restricted entries take
 precedence over unrestricted entries in this mode. **-N** skips both
 namespace checks. Key, principal and time checks still apply.
 
-- **-a**, **--allowed-signers-file** *file*: Read allowed signers from *file*.
-  Defaults to the files in the signers directory described under
-  [FILES](#files).
-- **-r**, **--revoked-keys-file** *file*: Also reject signers whose key or CA
-  is listed in *file*. This adds to the configured revocation lists described
+- **-a**, **--allowed-signers-file** *file*: Read allowed signers from *file*,
+  of up to 64 MiB. Defaults to the files in the signers directory described
   under [FILES](#files).
+- **-r**, **--revoked-keys-file** *file*: Also apply the revocations in
+  *file*, a text list or an OpenSSH KRL in format version 1, of up to 64 MiB.
+  This adds to the configured revocation lists described under
+  [FILES](#files).
 - **-n**, **--namespace** *name*: Require this namespace. Incompatible with
   **-N**.
 - **-N**, **--no-namespace**: Skip namespace checks.
@@ -193,17 +194,25 @@ combined limit of 64 MiB. The format is described in
 
 ### ~/.ssh/sign/revoked/
 
-Revocation lists for **verify**. Non-hidden regular **\*.conf** files are
-read in lexical order, with a combined limit of 64 MiB, also when **-a** or
-**-r** is given. A file given with **-r** is checked after them.
+Revocation lists for **verify**, read even when **-a** or **-r** is given.
+Non-hidden regular **\*.conf** text lists and **\*.krl** OpenSSH KRLs in
+format version 1 are read in lexical order, with a combined limit of 64 MiB.
+A file given with **-r** is checked after them.
 
-Each line is a public key in the form *type base64* [*comment*], as read by
-**ssh-keygen -Y verify -r**. Blank lines and lines starting with **#** are
-ignored. A listed key revokes itself and its certificates, and a listed CA key
-revokes the certificates it signed. Any other line, a certificate with an
-invalid CA signature, or a binary KRL fails verification instead of being
-skipped. **ssh-keygen** reads KRLs and ignores a line starting with a NUL
-byte.
+A text list has one public key per line, in the form *type base64*
+[*comment*], as read by **ssh-keygen -Y verify -r**. Blank lines and lines
+starting with **#** are ignored. A listed key revokes itself and its
+certificates, and a listed CA key revokes the certificates it signed.
+
+Create a KRL with **ssh-keygen -k** to revoke keys, fingerprints, or
+individual certificates by serial number or key ID. See KEY REVOCATION LISTS
+in **ssh-keygen**(1) for the syntax.
+
+Verification fails if a list cannot be read or parsed, rather than skipping
+the bad part. This includes a text list line that is not a valid key, a
+certificate with an invalid CA signature, and a KRL with an unsupported
+critical extension or signature section. Unlike **ssh-keygen**, **ssh-sign**
+also fails on a text list line starting with a NUL byte.
 
 On Unix, the config directory, the config file, the signers and revoked
 directories and their selected files must be owned by the current user or
