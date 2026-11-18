@@ -14,11 +14,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"pxy.se/go/ssh-sign/internal/helper"
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
-
-// maxLineSize limits memory use while allowing large certificates and comments.
-const maxLineSize = 4 << 20
 
 // maxSkippedRecorded caps retained diagnostics for malformed input.
 const maxSkippedRecorded = 64
@@ -48,19 +46,12 @@ type ParseError struct {
 }
 
 func (e *ParseError) Error() string {
-	return location(e.Source, e.Line) + ": " + e.Msg
-}
-
-func location(source string, line int) string {
-	if source == "" {
-		return fmt.Sprintf("line=%d", line)
-	}
-	return fmt.Sprintf("file=%q line=%d", source, line)
+	return helper.Location(e.Source, e.Line) + ": " + e.Msg
 }
 
 // Parse reads an allowed signers file from r.
 func Parse(r io.Reader) (*File, error) {
-	return parseWithMaxLineSize(r, maxLineSize)
+	return parseWithMaxLineSize(r, helper.MaxLineSize)
 }
 
 // ParseSource is Parse with source recorded on every entry and skipped line.

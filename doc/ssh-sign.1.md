@@ -71,6 +71,9 @@ namespace checks. Key, principal and time checks still apply.
 - **-a**, **--allowed-signers-file** *file*: Read allowed signers from *file*.
   Defaults to the files in the signers directory described under
   [FILES](#files).
+- **-r**, **--revoked-keys-file** *file*: Also reject signers whose key or CA
+  is listed in *file*. This adds to the configured revocation lists described
+  under [FILES](#files).
 - **-n**, **--namespace** *name*: Require this namespace. Incompatible with
   **-N**.
 - **-N**, **--no-namespace**: Skip namespace checks.
@@ -87,7 +90,8 @@ The **-f**, **-s** and **-t** options are described under
 
 Verify the data using the key in the signature. Require a specific key with
 **-k**, or explicitly accept any key with **-K**. Use **-K** to check
-integrity when the signer's identity is irrelevant.
+integrity when the signer's identity is irrelevant. Revocation lists are not
+consulted.
 
 - **-k**, **--auth-key** *key*: Require the given public key. The same key
   reference forms as **sign -k** are accepted. Use exactly one of **-k** and
@@ -187,14 +191,29 @@ Non-hidden regular **\*.conf** files are read in lexical order, with a
 combined limit of 64 MiB. The format is described in
 [**ssh-sign-allowed-signers**(5)](ssh-sign-allowed-signers.5.md).
 
-On Unix, the config directory, the config file, the signers directory and its
-selected files must be owned by the current user or root. Group and other
-write permissions are rejected.
+### ~/.ssh/sign/revoked/
+
+Revocation lists for **verify**. Non-hidden regular **\*.conf** files are
+read in lexical order, with a combined limit of 64 MiB, also when **-a** or
+**-r** is given. A file given with **-r** is checked after them.
+
+Each line is a public key in the form *type base64* [*comment*], as read by
+**ssh-keygen -Y verify -r**. Blank lines and lines starting with **#** are
+ignored. A listed key revokes itself and its certificates, and a listed CA key
+revokes the certificates it signed. Any other line, a certificate with an
+invalid CA signature, or a binary KRL fails verification instead of being
+skipped. **ssh-keygen** reads KRLs and ignores a line starting with a NUL
+byte.
+
+On Unix, the config directory, the config file, the signers and revoked
+directories and their selected files must be owned by the current user or
+root. Group and other write permissions are rejected.
 
 ## Environment
 
 - **SSH_AUTH_SOCK**: Path to the SSH agent socket used by **sign**.
-- **SSH_SIGN_CONFIG_DIR**: Directory containing **config** and **signers/**.
+- **SSH_SIGN_CONFIG_DIR**: Directory containing **config**, **signers/** and
+  **revoked/**.
   Defaults to **~/.ssh/sign** when unset or empty.
 - **NO_COLOR**: Disable colored output when set to a nonempty value.
 

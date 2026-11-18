@@ -10,7 +10,14 @@ The examples use `ssh-sign` on your PATH and an OpenSSH agent. Run them in a
 scratch directory. If you want to use a separate agent for the walkthrough,
 start a shell with `ssh-agent bash` and type `exit` when finished.
 
+The walkthrough uses its own configuration directory and leaves your usual
+`~/.ssh/sign` untouched. `verify` reads revocation lists from the
+configuration directory even when given `-a`, which would otherwise make the
+results depend on your own setup.
+
 ```sh
+mkdir -m 700 demo-config
+export SSH_SIGN_CONFIG_DIR="$PWD/demo-config"
 ssh-keygen -q -t ed25519 -N '' -f key
 ssh-keygen -q -t ed25519 -N '' -f other
 ssh-add key
@@ -300,14 +307,13 @@ ssh-sign verify -j -a ca_signers -n file -f data -s cert.sig
 
 ## Use an alias and a default signers directory
 
-Use a configuration directory inside the scratch directory. The `work`
-alias lets `sign` use its configured default key and lets `check` refer to
-the same public key by name. `verify` reads `signers/local.conf` when
-`-a` is omitted.
+Add a default key, an alias and a signers directory to the walkthrough's
+configuration directory. The `work` alias lets `sign` use its configured
+default key and lets `check` refer to the same public key by name. `verify`
+reads `signers/local.conf` when `-a` is omitted.
 
 ```sh
-mkdir -m 700 demo-config demo-config/signers
-export SSH_SIGN_CONFIG_DIR="$PWD/demo-config"
+mkdir -m 700 "$SSH_SIGN_CONFIG_DIR/signers"
 printf '[sign]\nkey = work\n\n[alias]\nwork = %s\n' "$(cat key.pub)" > "$SSH_SIGN_CONFIG_DIR/config"
 cp file_signers "$SSH_SIGN_CONFIG_DIR/signers/local.conf"
 chmod 600 "$SSH_SIGN_CONFIG_DIR/config" "$SSH_SIGN_CONFIG_DIR/signers/local.conf"
@@ -316,6 +322,23 @@ ssh-sign sign -f data > configured.sig
 ssh-sign check -k work -f data -s configured.sig
 ssh-sign verify -p alice@example.com -f data -s configured.sig
 ```
+
+## Revoke a key or a CA
+
+A revocation list rejects keys even where an allowed signers entry still
+trusts them. Revoking a key also revokes its certificates, and revoking a CA
+key revokes the certificates it signed. Pass a list with `-r`. Both
+verifications below fail.
+
+```sh
+cat key.pub > revoked_keys
+ssh-sign verify -a allowed_signers -r revoked_keys -p alice@example.com -n file -f data -s data.sig
+cat ca.pub > revoked_cas
+ssh-sign verify -a ca_signers -r revoked_cas -p alice@example.com -n file -f data -s cert.sig
+```
+
+Lists in the `revoked/` directory of the configuration directory apply to
+every verification, without `-r`.
 
 ## Exchange signatures with OpenSSH
 

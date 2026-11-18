@@ -23,9 +23,9 @@ func TestReadSignersFilesBoundsTheTotalSize(t *testing.T) {
 		paths = append(paths, path)
 	}
 
-	files, err := readSignersFiles(nil, paths, 20)
+	files, err := readConfigFiles(nil, signersKind, paths, 20)
 	if err != nil {
-		t.Fatalf("readSignersFiles() error = %v at the limit", err)
+		t.Fatalf("readConfigFiles() error = %v at the limit", err)
 	}
 	for i, f := range files {
 		data, _ := io.ReadAll(f.Reader)
@@ -34,9 +34,9 @@ func TestReadSignersFilesBoundsTheTotalSize(t *testing.T) {
 		}
 	}
 
-	_, err = readSignersFiles(nil, paths, 19)
+	_, err = readConfigFiles(nil, signersKind, paths, 19)
 	want := `signers files exceed 19 bytes in total at "` + paths[1] + `"`
 	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("readSignersFiles() error = %v, want %q", err, want)
+		t.Errorf("readConfigFiles() error = %v, want %q", err, want)
 	}
 }

@@ -10,9 +10,35 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+// Like the signers, revocations do not depend on the config directory's parents.
+func TestRevokedFilesIgnoresWritableAncestors(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".ssh", "sign")
+	if got, err := RevokedFiles(dir); got != nil || err != nil {
+		t.Errorf("RevokedFiles() = %q, %v without a config directory", got, err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, RevokedDirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := RevokedFiles(dir); got != nil || err != nil {
+		t.Errorf("RevokedFiles() = %q, %v with an empty revoked directory", got, err)
+	}
+	path := filepath.Join(dir, RevokedDirName, "a.conf")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := RevokedFiles(dir); !slices.Equal(got, []string{path}) || err != nil {
+		t.Errorf("RevokedFiles() = %q, %v, want %q", got, err, path)
+	}
+}
 
 func TestCheckOwnerAndMode(t *testing.T) {
 	const self = 1000
@@ -43,18 +69,32 @@ func TestCheckOwnerAndMode(t *testing.T) {
 	}
 }
 
-func TestSignersFilesRejectsUnsafePermissions(t *testing.T) {
-	setup := func(t *testing.T) (dir, signers, file string) {
+func TestPolicyFilesRejectUnsafePermissions(t *testing.T) {
+	for _, list := range []struct {
+		dirName string
+		files   func(string) ([]string, error)
+	}{
+		{SignersDirName, SignersFiles},
+		{RevokedDirName, RevokedFiles},
+	} {
+		t.Run(list.dirName, func(t *testing.T) {
+			testPolicyFilesRejectUnsafePermissions(t, list.dirName, list.files)
+		})
+	}
+}
+
+func testPolicyFilesRejectUnsafePermissions(t *testing.T, dirName string, files func(string) ([]string, error)) {
+	setup := func(t *testing.T) (dir, sub, file string) {
 		dir = t.TempDir()
-		signers = filepath.Join(dir, SignersDirName)
-		if err := os.Mkdir(signers, 0o700); err != nil {
+		sub = filepath.Join(dir, dirName)
+		if err := os.Mkdir(sub, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		file = filepath.Join(signers, "a.conf")
+		file = filepath.Join(sub, "a.conf")
 		if err := os.WriteFile(file, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		return dir, signers, file
+		return dir, sub, file
 	}
 	chmod := func(t *testing.T, path string, mode fs.FileMode) {
 		// Chmod ignores the umask.
@@ -65,42 +105,42 @@ func TestSignersFilesRejectsUnsafePermissions(t *testing.T) {
 
 	t.Run("safe", func(t *testing.T) {
 		dir, _, _ := setup(t)
-		if _, err := SignersFiles(dir); err != nil {
-			t.Errorf("SignersFiles() error = %v", err)
+		if _, err := files(dir); err != nil {
+			t.Errorf("files() error = %v", err)
 		}
 	})
-	for name, pick := range map[string]func(dir, signers, file string) string{
-		"config directory":  func(dir, _, _ string) string { return dir },
-		"signers directory": func(_, signers, _ string) string { return signers },
-		"signers file":      func(_, _, file string) string { return file },
+	for name, pick := range map[string]func(dir, sub, file string) string{
+		"config directory": func(dir, _, _ string) string { return dir },
+		"directory":        func(_, sub, _ string) string { return sub },
+		"file":             func(_, _, file string) string { return file },
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir, signers, file := setup(t)
-			path := pick(dir, signers, file)
+			dir, sub, file := setup(t)
+			path := pick(dir, sub, file)
 			info, err := os.Stat(path)
 			if err != nil {
 				t.Fatal(err)
 			}
 			chmod(t, path, info.Mode().Perm()|0o002)
-			_, err = SignersFiles(dir)
+			_, err = files(dir)
 			if err == nil || !strings.Contains(err.Error(), `"`+path+`" is writable by group or others`) {
-				t.Errorf("SignersFiles() error = %v, want %s rejected", err, path)
+				t.Errorf("files() error = %v, want %s rejected", err, path)
 			}
 		})
 	}
 
 	t.Run("symlink target", func(t *testing.T) {
-		dir, signers, _ := setup(t)
+		dir, sub, _ := setup(t)
 		target := filepath.Join(t.TempDir(), "target")
 		if err := os.WriteFile(target, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		chmod(t, target, 0o666)
-		if err := os.Symlink(target, filepath.Join(signers, "b.conf")); err != nil {
+		if err := os.Symlink(target, filepath.Join(sub, "b.conf")); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := SignersFiles(dir); err == nil || !strings.Contains(err.Error(), "b.conf") {
-			t.Errorf("SignersFiles() error = %v, want the symlinked file rejected", err)
+		if _, err := files(dir); err == nil || !strings.Contains(err.Error(), "b.conf") {
+			t.Errorf("files() error = %v, want the symlinked file rejected", err)
 		}
 	})
 }

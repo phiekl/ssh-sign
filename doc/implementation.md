@@ -29,6 +29,10 @@ and compares the principals reported without `-p` with
 `ssh-keygen -Y find-principals`. Invalid UTF-8 and entries outside these sets
 are not compared.
 
+`TestRevokedKeysMatchOpenSSH` compares revocation lists with
+`ssh-keygen -Y verify -r` in the same way, for both a plain signer key and a
+certificate.
+
 Armored signatures differ in both directions. Both accept trailing ASCII
 whitespace, such as an extra newline from pasting. `ssh-keygen` ignores any
 other text after the END line, while `ssh-sign` rejects it. When a signature

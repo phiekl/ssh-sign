@@ -70,6 +70,9 @@ By default, all non-hidden `*.conf` files in `~/.ssh/sign/signers/` are loaded
 in lexical order, as if they were concatenated into a single allowed signers
 file. Use `-a` to read a specific file instead.
 
+`verify` rejects signers whose key or CA is listed in a revocation list in
+`~/.ssh/sign/revoked/`. Use `-r` to add another list.
+
 ### Landlock sandbox
 
 On Linux, once its inputs are open, `ssh-sign` uses Landlock to deny itself
@@ -107,8 +110,8 @@ all command options.
 trusted signer file format and how entries are matched.
 
 See [more examples](doc/examples.md) for JSON output, verification failures,
-time restrictions, certificate authorities, configuration and OpenSSH
-interoperability.
+time restrictions, certificate authorities, revocation, configuration and
+OpenSSH interoperability.
 
 ## Building and testing
 

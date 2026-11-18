@@ -1820,6 +1820,27 @@ func TestVerifyWithoutAllowedSigners(t *testing.T) {
 		}
 	})
 
+	t.Run("dangling symlinks", func(t *testing.T) {
+		parent := t.TempDir()
+		config := filepath.Join(parent, "config")
+		if err := os.Mkdir(config, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("missing", filepath.Join(config, "signers")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("missing", filepath.Join(parent, "link")); err != nil {
+			t.Fatal(err)
+		}
+		for _, dir := range []string{config, filepath.Join(parent, "link")} {
+			t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+			_, stderr, code := run(t, args...)
+			if want := want(filepath.Join(dir, "signers")); code != 2 || !strings.Contains(stderr, want) {
+				t.Errorf("%s: exit status = %d, stderr = %q, want 2 and %q", dir, code, stderr, want)
+			}
+		}
+	})
+
 	t.Run("no conf files", func(t *testing.T) {
 		signers := writeSigners(t, map[string]string{"a.txt": "", ".b.conf": ""})
 		_, stderr, code := run(t, args...)
@@ -2067,5 +2088,166 @@ func TestCheckRejectsAnUnsafeConfig(t *testing.T) {
 	}
 	if want := `unsafe permissions: "` + path + `" is writable by group or others (mode 0666)`; !strings.Contains(stderr, want) {
 		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
+// writeRevoked writes files to the revoked directory of a config directory
+// and returns the revoked directory.
+func writeRevoked(t *testing.T, dir string, files map[string]string) string {
+	t.Helper()
+	revoked := filepath.Join(dir, "revoked")
+	if err := os.Mkdir(revoked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(revoked, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("writing revoked file: %v", err)
+		}
+	}
+	return revoked
+}
+
+func TestVerifyRejectsARevokedKey(t *testing.T) {
+	f := newFixture(t, "file")
+	revoked := filepath.Join(f.dir, "revoked")
+	if err := os.WriteFile(revoked, []byte("# keys\n"+f.keyLine()+" lost\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := run(t, "verify", "-a", f.allowed, "-r", revoked,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if code != 1 || stdout != "" {
+		t.Errorf("exit status = %d, stdout = %q, want 1 and nothing", code, stdout)
+	}
+	want := `error: verify: signer public key is revoked: file="` + revoked + `" line=2`
+	if strings.TrimSpace(stderr) != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+
+	stdout, _, code = run(t, "verify", "-j", "-a", f.allowed, "--revoked-keys-file", revoked,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	result, _ := decodeJSON(t, stdout)["result"].(map[string]any)
+	if code != 1 || result["authentication"] != "invalid" || result["verification"] != "valid" {
+		t.Errorf("exit status = %d, JSON = %q, want authentication invalid only", code, stdout)
+	}
+}
+
+func TestVerifyAcceptsAKeyThatIsNotRevoked(t *testing.T) {
+	f := newFixture(t, "file")
+	revoked := filepath.Join(f.dir, "revoked")
+	if err := os.WriteFile(revoked, []byte(otherKeyLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := run(t, "verify", "-a", f.allowed, "-r", revoked,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if code != 0 {
+		t.Errorf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+}
+
+// Like ssh-keygen, fail verification if the revoked keys cannot be read.
+func TestVerifyFailsOnUnreadableRevokedKeys(t *testing.T) {
+	f := newFixture(t, "file")
+	krl := filepath.Join(f.dir, "krl")
+	malformed := filepath.Join(f.dir, "malformed")
+	if err := os.WriteFile(krl, []byte("SSHKRL\n\x00\x00\x00\x00\x01"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(malformed, []byte(otherKeyLine+"\nnot a key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := map[string]struct{ path, want string }{
+		"missing":   {filepath.Join(f.dir, "missing"), "failed to open revoked keys file"},
+		"KRL":       {krl, `failed parsing revoked keys: file="` + krl + `": KRL format is not supported`},
+		"malformed": {malformed, `failed parsing revoked keys: file="` + malformed + `" line=2: invalid ssh public key`},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			stdout, stderr, code := run(t, "verify", "-a", f.allowed, "-r", tt.path,
+				"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+			if code != 1 || stdout != "" {
+				t.Errorf("exit status = %d, stdout = %q, want 1 and nothing", code, stdout)
+			}
+			if !strings.Contains(stderr, tt.want) {
+				t.Errorf("stderr = %q, want it to hold %q", stderr, tt.want)
+			}
+		})
+	}
+}
+
+func TestVerifyDefaultsToTheRevokedDirectory(t *testing.T) {
+	f := newFixture(t, "file")
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	revoked := writeRevoked(t, dir, map[string]string{
+		"10-other.conf":  otherKeyLine,
+		"20-signer.conf": f.keyLine() + "\n",
+		"30-ignored.txt": "garbage",
+	})
+
+	// The default applies with -a too.
+	_, stderr, code := run(t, "verify", "-a", f.allowed,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	want := `signer public key is revoked: file="` + filepath.Join(revoked, "20-signer.conf") + `" line=1`
+	if code != 1 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d, stderr = %q, want 1 and %q", code, stderr, want)
+	}
+
+	// An unrelated explicit list still leaves the configured revocation in effect.
+	other := filepath.Join(f.dir, "other")
+	if err := os.WriteFile(other, []byte(otherKeyLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code = run(t, "verify", "-a", f.allowed, "-r", other,
+		"-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if code != 1 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d with -r, stderr = %q, want 1 and %q", code, stderr, want)
+	}
+}
+
+func TestVerifyWithoutARevokedDirectory(t *testing.T) {
+	f := newFixture(t, "file")
+	writeSigners(t, map[string]string{"a.conf": f.principal + " " + f.keyLine() + "\n"})
+
+	_, stderr, code := run(t, "verify", "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if code != 0 {
+		t.Errorf("exit status = %d, want 0 (stderr: %s)", code, stderr)
+	}
+}
+
+func TestVerifyFailsOnADanglingRevokedDirectory(t *testing.T) {
+	f := newFixture(t, "file")
+	dir := t.TempDir()
+	t.Setenv("SSH_SIGN_CONFIG_DIR", dir)
+	target := writeRevoked(t, t.TempDir(), map[string]string{"keys.conf": f.keyLine() + "\n"})
+	revoked := filepath.Join(dir, "revoked")
+	if err := os.Symlink(target, revoked); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"verify", "-a", f.allowed, "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal}
+	_, stderr, code := run(t, args...)
+	if code != 1 || !strings.Contains(stderr, "signer public key is revoked") {
+		t.Fatalf("exit status = %d, stderr = %q, want the key revoked", code, stderr)
+	}
+
+	if err := os.Rename(target, target+".unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code = run(t, args...)
+	want := fmt.Sprintf("revoked directory %q: %q is a broken symlink", revoked, revoked)
+	if code != 1 || !strings.Contains(stderr, want) {
+		t.Errorf("exit status = %d, stderr = %q, want 1 and %q", code, stderr, want)
+	}
+}
+
+func TestVerifyRevokedDirectoryWithTheSignersDirectory(t *testing.T) {
+	f := newFixture(t, "file")
+	signers := writeSigners(t, map[string]string{"a.conf": f.principal + " " + f.keyLine() + "\n"})
+	writeRevoked(t, filepath.Dir(signers), map[string]string{"a.conf": f.keyLine() + "\n"})
+
+	_, stderr, code := run(t, "verify", "-f", f.data, "-s", f.signature, "-n", "file", "-p", f.principal)
+	if code != 1 || !strings.Contains(stderr, "signer public key is revoked") {
+		t.Errorf("exit status = %d, stderr = %q, want the key revoked", code, stderr)
 	}
 }

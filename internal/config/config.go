@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"pxy.se/go/ssh-sign/internal/helper"
@@ -176,22 +177,32 @@ func checkAlias(name, value string) error {
 // together form the default allowed signers.
 const SignersDirName = "signers"
 
+// RevokedDirName is the directory in the config directory whose *.conf files
+// together form the default revoked keys.
+const RevokedDirName = "revoked"
+
 // SignersFiles returns the *.conf files in the signers directory, sorted by
 // name. Dotfiles are ignored. A missing directory returns no files. The
 // directories and files must be safe from other users, see checkInfo.
 func SignersFiles(dir string) ([]string, error) {
-	signers := filepath.Join(dir, SignersDirName)
-	entries, err := os.ReadDir(signers)
+	return listFiles(dir, SignersDirName, "signers", ".conf")
+}
+
+// listFiles lists the files with one of the suffixes in the named
+// subdirectory of dir. A missing subdirectory returns no files.
+func listFiles(dir, sub, name string, suffixes ...string) ([]string, error) {
+	path := filepath.Join(dir, sub)
+	entries, err := os.ReadDir(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("signers directory %q: %w", signers, helper.UnwrapPathError(err))
+		return nil, fmt.Errorf("%s directory %q: %w", name, path, helper.UnwrapPathError(err))
 	}
-	for _, d := range []string{dir, signers} {
+	for _, d := range []string{dir, path} {
 		info, err := os.Stat(d)
 		if err != nil {
-			return nil, fmt.Errorf("signers directory %q: %w", d, helper.UnwrapPathError(err))
+			return nil, fmt.Errorf("%s directory %q: %w", name, d, helper.UnwrapPathError(err))
 		}
 		if err := checkInfo(d, info); err != nil {
 			return nil, err
@@ -199,22 +210,24 @@ func SignersFiles(dir string) ([]string, error) {
 	}
 	var paths []string
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") || !strings.HasSuffix(e.Name(), ".conf") {
+		if strings.HasPrefix(e.Name(), ".") || !slices.ContainsFunc(suffixes, func(suffix string) bool {
+			return strings.HasSuffix(e.Name(), suffix)
+		}) {
 			continue
 		}
-		path := filepath.Join(signers, e.Name())
+		file := filepath.Join(path, e.Name())
 		// Stat follows symlinks.
-		info, err := os.Stat(path)
+		info, err := os.Stat(file)
 		if err != nil {
-			return nil, fmt.Errorf("signers file %q: %w", path, helper.UnwrapPathError(err))
+			return nil, fmt.Errorf("%s file %q: %w", name, file, helper.UnwrapPathError(err))
 		}
 		if !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("signers file %q: not a regular file", path)
+			return nil, fmt.Errorf("%s file %q: not a regular file", name, file)
 		}
-		if err := checkInfo(path, info); err != nil {
+		if err := checkInfo(file, info); err != nil {
 			return nil, err
 		}
-		paths = append(paths, path)
+		paths = append(paths, file)
 	}
 	return paths, nil
 }

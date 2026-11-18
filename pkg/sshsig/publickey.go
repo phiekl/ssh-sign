@@ -18,6 +18,21 @@ func PublicKeyEqual(pk1, pk2 ssh.PublicKey) bool {
 	return bytes.Equal(pk1.Marshal(), pk2.Marshal())
 }
 
+// PlainPublicKeyBlob returns the wire form of pk or of its certificate subject.
+func PlainPublicKeyBlob(pk ssh.PublicKey) ([]byte, error) {
+	if key, ok := pk.(*certificateKey); ok {
+		return key.cert.Key.Marshal(), nil
+	}
+	cert, err := AsCertificate(pk)
+	if err != nil {
+		return nil, err
+	}
+	if cert != nil {
+		pk = cert.Key
+	}
+	return pk.Marshal(), nil
+}
+
 // ParsePublicKeyLine parses a string like "[type] <data> [comment ...]" similar
 // to ssh.ParseAuthorizedKey(), but only cares about the data field.
 func ParsePublicKeyLine(pkLine string) (ssh.PublicKey, error) {

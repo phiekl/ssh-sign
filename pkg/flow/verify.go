@@ -14,6 +14,7 @@ import (
 
 	"pxy.se/go/ssh-sign/pkg/allowedsigners"
 	"pxy.se/go/ssh-sign/pkg/cli"
+	"pxy.se/go/ssh-sign/pkg/revokedkeys"
 	"pxy.se/go/ssh-sign/pkg/sshsig"
 )
 
@@ -28,9 +29,11 @@ type VerifyOpts struct {
 	Namespace           string
 	NoNamespace         bool
 	Principal           string
-	SignatureFile       io.Reader
-	Timestamp           time.Time
-	VerifyFile          io.Reader
+	// RevokedKeysFiles are read in order as one revoked keys list.
+	RevokedKeysFiles []NamedReader
+	SignatureFile    io.Reader
+	Timestamp        time.Time
+	VerifyFile       io.Reader
 }
 
 // VerifyResult holds the results of Verify.
@@ -105,6 +108,11 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 			return nil, []error{err}
 		}
 	}
+	for _, f := range opts.RevokedKeysFiles {
+		if err := requireReader(f.Reader, "revoked keys file "+strconv.Quote(f.Name)); err != nil {
+			return nil, []error{err}
+		}
+	}
 	if err := requireReader(opts.SignatureFile, "signature file"); err != nil {
 		return nil, []error{err}
 	}
@@ -129,6 +137,10 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	)
 
 	parsed, err := parseAllowedSigners(opts.Log, opts.AllowedSignersFile, opts.AllowedSignersFiles)
+	if err != nil {
+		return nil, []error{err}
+	}
+	revoked, err := parseRevokedKeys(opts.Log, opts.RevokedKeysFiles)
 	if err != nil {
 		return nil, []error{err}
 	}
@@ -160,6 +172,21 @@ func Verify(opts *VerifyOpts) (*VerifyResult, []error) {
 	if res.Authentication == "disabled" && ent != nil && ent.Options.CertAuthority {
 		res.Principals = ent.CertificatePrincipals(sig.PublicKey)
 		res.Principal = strings.Join(res.Principals, ",")
+	}
+
+	if key, ca, err := revoked.Revoked(sig.PublicKey); err != nil {
+		res.Authentication = "invalid"
+		errs = append(errs, fmt.Errorf("failed checking revoked keys: %w", err))
+	} else if key != nil {
+		cli.Debug(opts.Log, cli.LevelDebug1, "verify: signer is revoked",
+			sourceAttr(key.Source), "line", key.Line, "certificate_authority", ca,
+		)
+		res.Authentication = "invalid"
+		if ca {
+			errs = append(errs, fmt.Errorf("signer certificate authority is revoked: %s", key.Location()))
+		} else {
+			errs = append(errs, fmt.Errorf("signer public key is revoked: %s", key.Location()))
+		}
 	}
 
 	// Enforce the certificate's own validity window too.
@@ -221,6 +248,22 @@ func parseAllowedSigners(
 		)
 	}
 	return parsed, nil
+}
+
+// parseRevokedKeys parses files as one revoked keys list.
+func parseRevokedKeys(log *slog.Logger, files []NamedReader) (*revokedkeys.List, error) {
+	revoked := &revokedkeys.List{}
+	for _, f := range files {
+		l, err := revokedkeys.ParseSource(f.Reader, f.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed parsing revoked keys: %w", err)
+		}
+		revoked.Append(l)
+	}
+	cli.Debug(log, cli.LevelDebug2, "verify: parsed revoked keys",
+		"files", len(files), "keys", len(revoked.Keys),
+	)
+	return revoked, nil
 }
 
 // matchSigner finds an entry matching the key and requested policy.

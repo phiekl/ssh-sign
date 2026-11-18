@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"pxy.se/go/ssh-sign/internal/helper"
 )
 
 // File represents a parsed allowed signers file.
@@ -66,5 +67,5 @@ type Options struct {
 
 // Location returns the entry's line, qualified by its source if named.
 func (e *Entry) Location() string {
-	return location(e.Source, e.Line)
+	return helper.Location(e.Source, e.Line)
 }

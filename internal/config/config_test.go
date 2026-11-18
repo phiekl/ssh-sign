@@ -6,6 +6,7 @@ package config
 
 import (
 	"crypto/ed25519"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,6 +19,42 @@ import (
 )
 
 const testKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIC5NiSRLYR8/cfe06a6pWHxNee5NHz7Vb++qYJS06uk"
+
+func TestRevokedFilesWithConfigDirectorySymlink(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "config-link")
+	target := filepath.Join(parent, "config-target")
+	if err := os.Symlink(target, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{dir, dir + string(filepath.Separator), filepath.Join(dir, "nested", "config")} {
+		want := fmt.Sprintf("revoked directory %q: %q is a broken symlink", filepath.Join(path, RevokedDirName), dir)
+		if _, err := RevokedFiles(path); err == nil || err.Error() != want {
+			t.Errorf("RevokedFiles(%q) error = %v, want %q", path, err, want)
+		}
+	}
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := RevokedFiles(dir); got != nil || err != nil {
+		t.Errorf("RevokedFiles() = %q, %v for an existing config directory without revoked files", got, err)
+	}
+	if got, err := RevokedFiles(filepath.Join(dir, "nested", "config")); got != nil || err != nil {
+		t.Errorf("RevokedFiles() = %q, %v for an absent config directory under a valid symlink", got, err)
+	}
+}
+
+func TestRevokedFilesWithABrokenRevokedSymlink(t *testing.T) {
+	dir := t.TempDir()
+	revoked := filepath.Join(dir, RevokedDirName)
+	if err := os.Symlink("missing", revoked); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("revoked directory %q: %q is a broken symlink", revoked, revoked)
+	if _, err := RevokedFiles(dir); err == nil || err.Error() != want {
+		t.Errorf("RevokedFiles() error = %v, want %q", err, want)
+	}
+}
 
 // aliasLikeKeyBlob returns a key blob made only of alias name characters.
 func aliasLikeKeyBlob(t *testing.T) string {

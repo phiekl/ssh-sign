@@ -88,23 +88,49 @@ func defaultSignersFiles(log *slog.Logger) ([]string, error) {
 	return paths, nil
 }
 
+// defaultRevokedFiles returns the configured revocation lists.
+func defaultRevokedFiles(log *slog.Logger) ([]string, error) {
+	dir, err := config.Dir()
+	if err != nil {
+		cli.Debug(log, cli.LevelDebug2, "config: no directory", "error", err)
+		return nil, nil
+	}
+	return config.RevokedFiles(dir)
+}
+
 // maxSignersSize bounds the signers files held in memory until parsing.
 const maxSignersSize = 64 << 20
 
-// readSignersFiles reads the files one at a time, so that they need not stay
+// maxDefaultRevokedFilesSize bounds the combined size of the files preloaded
+// from the config directory.
+const maxDefaultRevokedFilesSize = 64 << 20
+
+// fileKind names a kind of config file in messages.
+type fileKind struct {
+	file, files string
+}
+
+var (
+	signersKind = fileKind{file: "allowed signers", files: "signers"}
+	revokedKind = fileKind{file: "revoked keys", files: "revoked keys"}
+)
+
+// readConfigFiles reads the files one at a time, so that they need not stay
 // open until parsing after restrict. Together they may hold at most limit bytes.
-func readSignersFiles(log *slog.Logger, paths []string, limit int64) ([]flow.NamedReader, error) {
+func readConfigFiles(
+	log *slog.Logger, kind fileKind, paths []string, limit int64,
+) ([]flow.NamedReader, error) {
 	var files []flow.NamedReader
 	remaining := limit
 	for _, path := range paths {
-		debugInput(log, "allowed signers", path)
-		data, err := readSignersFile(path, remaining)
+		debugInput(log, kind.file, path)
+		data, err := readConfigFile(kind, path, remaining)
 		if err != nil {
 			return nil, err
 		}
 		if int64(len(data)) > remaining {
 			return nil, fmt.Errorf(
-				"signers files exceed %d bytes in total at %q", limit, path,
+				"%s files exceed %d bytes in total at %q", kind.files, limit, path,
 			)
 		}
 		remaining -= int64(len(data))
@@ -113,13 +139,29 @@ func readSignersFiles(log *slog.Logger, paths []string, limit int64) ([]flow.Nam
 	return files, nil
 }
 
-// readSignersFile reads at most one byte beyond limit.
-func readSignersFile(path string, limit int64) ([]byte, error) {
+func openConfigFile(kind fileKind, path string) (*os.File, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open allowed signers file %q: %w",
-			path, helper.UnwrapPathError(err),
+		return nil, fmt.Errorf("failed to open %s file %q: %w",
+			kind.file, path, helper.UnwrapPathError(err),
 		)
+	}
+	return f, nil
+}
+
+func openNamedConfigFile(kind fileKind, path string) (flow.NamedReader, func(), error) {
+	f, err := openConfigFile(kind, path)
+	if err != nil {
+		return flow.NamedReader{}, nil, err
+	}
+	return flow.NamedReader{Name: path, Reader: f}, func() { _ = f.Close() }, nil
+}
+
+// readConfigFile reads at most one byte beyond limit.
+func readConfigFile(kind fileKind, path string, limit int64) ([]byte, error) {
+	f, err := openConfigFile(kind, path)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = f.Close() }()
 	if err := config.CheckOpenFile(f); err != nil {
@@ -127,8 +169,8 @@ func readSignersFile(path string, limit int64) ([]byte, error) {
 	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("failed reading allowed signers file %q: %w",
-			path, helper.UnwrapPathError(err),
+		return nil, fmt.Errorf("failed reading %s file %q: %w",
+			kind.file, path, helper.UnwrapPathError(err),
 		)
 	}
 	return data, nil

@@ -19,6 +19,7 @@ type VerifyCommand struct {
 	commandOpts flow.VerifyOpts
 
 	allowedSignersFile string
+	revokedKeysFile    string
 	signatureFile      string
 	timestamp          string
 	verifyFile         string
@@ -42,21 +43,34 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 		if err != nil {
 			return nil, []error{err}
 		}
-		c.commandOpts.AllowedSignersFiles, err = readSignersFiles(log, paths, maxSignersSize)
+		c.commandOpts.AllowedSignersFiles, err = readConfigFiles(log, signersKind, paths, maxSignersSize)
 		if err != nil {
 			return nil, []error{err}
 		}
 	} else {
-		f, err := os.Open(c.allowedSignersFile)
+		file, closeFile, err := openNamedConfigFile(signersKind, c.allowedSignersFile)
 		if err != nil {
-			return nil, []error{
-				fmt.Errorf("failed to open allowed signers file %q: %w",
-					c.allowedSignersFile, helper.UnwrapPathError(err),
-				),
-			}
+			return nil, []error{err}
 		}
-		defer func() { _ = f.Close() }()
-		c.commandOpts.AllowedSignersFiles = []flow.NamedReader{{Name: c.allowedSignersFile, Reader: f}}
+		defer closeFile()
+		c.commandOpts.AllowedSignersFiles = []flow.NamedReader{file}
+	}
+
+	paths, err := defaultRevokedFiles(log)
+	if err != nil {
+		return nil, []error{err}
+	}
+	c.commandOpts.RevokedKeysFiles, err = readConfigFiles(log, revokedKind, paths, maxDefaultRevokedFilesSize)
+	if err != nil {
+		return nil, []error{err}
+	}
+	if c.revokedKeysFile != "" {
+		file, closeFile, err := openNamedConfigFile(revokedKind, c.revokedKeysFile)
+		if err != nil {
+			return nil, []error{err}
+		}
+		defer closeFile()
+		c.commandOpts.RevokedKeysFiles = append(c.commandOpts.RevokedKeysFiles, file)
 	}
 
 	c.signatureFile = signatureFileOrDefault(c.signatureFile, c.verifyFile)
@@ -88,6 +102,9 @@ func (c *VerifyCommand) Run(log *slog.Logger) (fmt.Stringer, []error) {
 	if c.allowedSignersFile != "" {
 		debugInput(log, "allowed signers", c.allowedSignersFile)
 	}
+	if c.revokedKeysFile != "" {
+		debugInput(log, "revoked keys", c.revokedKeysFile)
+	}
 	debugInput(log, "signature", c.signatureFile)
 	debugInput(log, "verify", c.verifyFile)
 
@@ -104,6 +121,13 @@ func (c *VerifyCommand) Flags(s *args.Set) {
 		"read allowed signers, with options, from file",
 	)
 	s.DenyEmpty("allowed-signers-file")
+
+	s.String(
+		&c.revokedKeysFile,
+		"revoked-keys-file", "r", "",
+		"reject signers whose public key or CA is listed in file",
+	)
+	s.DenyEmpty("revoked-keys-file")
 
 	s.String(
 		&c.verifyFile,
