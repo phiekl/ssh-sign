@@ -35,7 +35,7 @@ func TestVerifyChecksRevokedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignatureRead() error = %v", err)
 	}
-	cert, _ := sshsig.AsCertificate(sig.PublicKey)
+	cert, _ := sshsig.CertificateDetails(sig.PublicKey)
 	plainLine := sshsig.PublicKeyString(cert.Key)
 
 	tests := []struct {

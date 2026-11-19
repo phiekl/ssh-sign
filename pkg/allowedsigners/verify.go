@@ -88,11 +88,19 @@ func (f *File) matchEntry(
 	// First usable fallback for namespaceRequired.
 	var unrestricted *Entry
 	readCertificate := sync.OnceValue(func() *ssh.Certificate {
-		cert, _ := sshsig.AsCertificate(pk)
+		cert, err := sshsig.CertificateDetails(pk)
+		if err != nil {
+			// Still find the CA of a malformed concrete certificate, so that
+			// checkCertificate reports why its entry does not authorize it.
+			cert, _ = pk.(*ssh.Certificate)
+		}
 		return cert
 	})
 	checkCertificate := sync.OnceValue(func() error {
 		return sshsig.CertificateValidAt(pk, ts)
+	})
+	matchPublicKey := sync.OnceValue(func() func(ssh.PublicKey) bool {
+		return sshsig.PublicKeyMatcher(pk)
 	})
 
 	for i := range f.Entries {
@@ -111,7 +119,7 @@ func (f *File) matchEntry(
 			if authorizationErr == nil {
 				authorizationErr = ent.authorizePrincipal(cert, principal)
 			}
-		} else if !sshsig.PublicKeyEqual(ent.PublicKey, pk) {
+		} else if !matchPublicKey()(ent.PublicKey) {
 			continue
 		}
 		candidates++
@@ -175,7 +183,7 @@ func (e *Entry) authorizePrincipal(cert *ssh.Certificate, principal string) erro
 		return fmt.Errorf("certificate lacks principal list")
 	case principal != "":
 		// Certificate principals are literal names, not patterns.
-		if !slices.Contains(cert.ValidPrincipals, principal) {
+		if !slices.Contains(sshsig.CertificatePrincipals(cert), principal) {
 			return fmt.Errorf("name is not a listed principal")
 		}
 	case len(e.matchingPrincipals(cert)) == 0:
@@ -195,7 +203,7 @@ func (e *Entry) CertificatePrincipals(pk ssh.PublicKey) []string {
 	if !e.Options.CertAuthority {
 		return nil
 	}
-	cert, err := sshsig.AsCertificate(pk)
+	cert, err := sshsig.CertificateDetails(pk)
 	if err != nil || !e.matchesCA(cert) {
 		return nil
 	}
@@ -209,8 +217,8 @@ func (e *Entry) matchingPrincipals(cert *ssh.Certificate) []string {
 		beforeEmpty = patterns[:i]
 	}
 	var principals []string
-	for _, p := range cert.ValidPrincipals {
-		if patternsMatch(beforeEmpty, p) && patternsMatch(patterns, p) {
+	for _, p := range sshsig.CertificatePrincipals(cert) {
+		if p != "" && patternsMatch(beforeEmpty, p) && patternsMatch(patterns, p) {
 			principals = append(principals, p)
 		}
 	}

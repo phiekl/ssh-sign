@@ -32,7 +32,8 @@ are not compared.
 `TestRevokedKeysMatchOpenSSH` compares text lists and KRLs with
 `ssh-keygen -Y verify -r` in the same way, for a plain signer key and for
 certificates. The KRL cases cover keys, fingerprints, certificate serials,
-serial ranges and key IDs.
+serial ranges and key IDs. `TestRevokedKeyTypesMatchOpenSSH` revokes signers
+and CAs of each supported key type through both kinds of list.
 
 Armored signatures differ in both directions. Both accept trailing ASCII
 whitespace, such as an extra newline from pasting. `ssh-keygen` ignores any
@@ -63,6 +64,10 @@ It logs the effective ABI after go-landlock's errata adjustments. If this
 second query fails, ssh-sign cannot report the effective ABI.
 
 ## ML-DSA
+
+`TestMLDSACertificateMatchesOpenSSH` signs and verifies in both directions
+with OpenSSH, using hybrid certificates issued by Ed25519, RSA, ECDSA and
+hybrid CAs, and Ed25519, RSA and ECDSA certificates issued by a hybrid CA.
 
 The `ssh-mldsa44-ed25519` implementation uses `crypto/mldsa` and
 `crypto/ed25519`, following [OpenSSH's implementation](https://github.com/openssh/openssh-portable/blob/V_10_6_P2/ssh-mldsa-eddsa.c),

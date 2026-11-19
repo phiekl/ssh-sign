@@ -151,13 +151,6 @@ func parseKRLCA(blob []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid KRL public key: %w", err)
 	}
-	cert, err := sshsig.AsCertificate(key)
-	if err != nil {
-		return nil, err
-	}
-	if cert != nil {
-		return nil, fmt.Errorf("expected a plain public key in KRL")
-	}
 	return key.Marshal(), nil
 }
 
@@ -317,7 +310,7 @@ func (c *krlCertificatesForCA) revoked(cert *ssh.Certificate) bool {
 	if c == nil {
 		return false
 	}
-	if _, ok := c.keyIDs[cert.KeyId]; ok {
+	if _, ok := c.keyIDs[sshsig.CertificateKeyID(cert)]; ok {
 		return true
 	}
 	if _, ok := c.serials[cert.Serial]; ok {

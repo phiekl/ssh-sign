@@ -415,3 +415,29 @@ func TestSecurityKeyInfoFlagsText(t *testing.T) {
 		})
 	}
 }
+
+// ssh-keygen could not read a signature with this certificate.
+func TestSignatureCreateRejectsAMalformedRSACertificate(t *testing.T) {
+	cert := newRSACertificateSigner(t).PublicKey().(*ssh.Certificate)
+	cert.KeyId = "cert\x00x"
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert.Key = signer.PublicKey()
+	if err := cert.SignCert(rand.Reader, newSigner(t)); err != nil {
+		t.Fatal(err)
+	}
+	certSigner, err := ssh.NewCertSigner(cert, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := SignatureCreate(certSigner, "file", strings.NewReader("data"))
+	if sig != nil || err == nil || !strings.Contains(err.Error(), "NUL byte") {
+		t.Errorf("SignatureCreate() = %v, %v, want a NUL byte error", sig, err)
+	}
+}

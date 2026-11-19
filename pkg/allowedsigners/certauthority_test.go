@@ -109,6 +109,10 @@ func TestMatchEntryCertAuthority(t *testing.T) {
 			key: good, wantLine: 1,
 		},
 		{
+			name: "empty certificate principals", lines: []string{"* cert-authority " + caLine},
+			key: issue(t, ca, "", "\x00"), wantErr: "no certificate principal matches",
+		},
+		{
 			name: "principal not in the certificate", lines: []string{"* cert-authority " + caLine},
 			key: good, principal: "carol@example.com", wantErr: "name is not a listed principal",
 		},
@@ -291,6 +295,23 @@ func TestMatchEntryParsesCertificateOnceForUnrelatedCAs(t *testing.T) {
 	}
 }
 
+func TestMatchEntryEncodesCertificateOnceForDirectEntries(t *testing.T) {
+	cert := issue(t, newSigner(t), "alice@example.com")
+	pk := &countedCertificateKey{PublicKey: cert}
+	f := parseLines(t,
+		"* "+keyLine(newSigner(t).PublicKey()),
+		"* "+keyLine(newSigner(t).PublicKey()),
+		"* "+keyLine(cert),
+	)
+	entry, err := f.MatchEntry(pk, "", "git", at(t, "2026-06-01"))
+	if err != nil || entry != &f.Entries[2] {
+		t.Fatalf("MatchEntry() = %v, %v, want the third entry", entry, err)
+	}
+	if pk.marshalCalls != 1 {
+		t.Errorf("certificate encoding read %d times, want once", pk.marshalCalls)
+	}
+}
+
 // ssh-keygen -Y find-principals stops at the first empty pattern.
 func TestCertificatePrincipalsStopAtAnEmptyPattern(t *testing.T) {
 	ca := newSigner(t)
@@ -314,9 +335,9 @@ func TestMatchEntryIgnoresChangesToACertificateCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePublicKey() error = %v", err)
 	}
-	cert, err := sshsig.AsCertificate(pk)
+	cert, err := sshsig.CertificateDetails(pk)
 	if err != nil {
-		t.Fatalf("AsCertificate() error = %v", err)
+		t.Fatalf("CertificateDetails() error = %v", err)
 	}
 	cert.ValidPrincipals = []string{"mallory@example.com"}
 
@@ -326,5 +347,16 @@ func TestMatchEntryIgnoresChangesToACertificateCopy(t *testing.T) {
 	}
 	if entry, err := f.MatchEntry(pk, "alice@example.com", "git", at(t, "2026-06-01")); entry == nil {
 		t.Errorf("MatchEntry() = nil, %v, want alice authorized", err)
+	}
+}
+
+// OpenSSH cannot parse a principal with a NUL byte before its end.
+func TestMatchEntryRejectsAConcreteCertificateWithANULPrincipal(t *testing.T) {
+	ca := newSigner(t)
+	cert := issue(t, ca, "alice@example.com\x00x")
+	f := parseLines(t, "* cert-authority "+keyLine(ca.PublicKey()))
+	entry, err := f.MatchEntry(cert, "alice@example.com", "git", at(t, "2026-06-01"))
+	if entry != nil || err == nil || !strings.Contains(err.Error(), "NUL byte") {
+		t.Errorf("MatchEntry() = %v, %v, want a NUL byte error", entry, err)
 	}
 }

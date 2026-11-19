@@ -206,8 +206,10 @@ func parseLine(n int, line string) (*Entry, *ParseError) {
 		}
 	}
 	// Stricter than ssh-keygen, which would use the certificate's plain key.
-	if cert, _ := sshsig.AsCertificate(pk); cert != nil && e.Options.CertAuthority {
-		return nil, &ParseError{Line: n, Msg: "cert-authority requires a plain key"}
+	if e.Options.CertAuthority {
+		if cert, _ := sshsig.AsCertificate(pk); cert != nil {
+			return nil, &ParseError{Line: n, Msg: "cert-authority requires a plain key"}
+		}
 	}
 	e.PublicKey = pk
 

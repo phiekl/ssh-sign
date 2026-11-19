@@ -133,11 +133,15 @@ func Sign(in io.Reader, signer ssh.Signer, h HashAlgorithm, namespace string) (*
 	if err != nil {
 		return nil, err
 	}
+	// ssh-keygen could not read the signature.
+	if err := checkCertificate(pk); err != nil {
+		return nil, err
+	}
 	digest, err := hashMessage(in, h)
 	if err != nil {
 		return nil, err
 	}
-	sig, err := signBlob(signer, signedData(namespace, h, digest))
+	sig, err := signBlob(signer, pk.Type(), signedData(namespace, h, digest))
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +158,8 @@ func Sign(in io.Reader, signer ssh.Signer, h HashAlgorithm, namespace string) (*
 // does. Both x/crypto's and the agent's signers otherwise fall back to the
 // legacy ssh-rsa/SHA-1 format. A certificate hides the key type here, which is
 // why SignatureCreate wraps those signers itself.
-func signBlob(signer ssh.Signer, blob []byte) (*ssh.Signature, error) {
-	if signer.PublicKey().Type() == ssh.KeyAlgoRSA {
+func signBlob(signer ssh.Signer, keyType string, blob []byte) (*ssh.Signature, error) {
+	if keyType == ssh.KeyAlgoRSA {
 		algorithmSigner, ok := signer.(ssh.AlgorithmSigner)
 		if !ok {
 			return nil, fmt.Errorf("RSA signer does not support selecting a SHA-2 algorithm")
@@ -236,6 +240,10 @@ func ParseSignature(blob []byte) (*Signature, error) {
 // validateStructure checks signature fields without reading the message.
 // Parsing and verification use the same checks.
 func validateStructure(sig *Signature) error {
+	// ParseSignature rejects such a certificate; a constructed one may hold it.
+	if err := checkCertificate(sig.PublicKey); err != nil {
+		return err
+	}
 	if sig.Version != sigVersion {
 		return fmt.Errorf(
 			"unsupported signature version %d: expected %d", sig.Version, sigVersion,
@@ -329,7 +337,7 @@ func validateSignatureFormat(pk ssh.PublicKey, format string) error {
 func Marshal(sig *Signature) []byte {
 	wire := signatureWire{
 		Version:       sig.Version,
-		PublicKey:     string(sig.PublicKey.Marshal()),
+		PublicKey:     string(encodable(sig.PublicKey).Marshal()),
 		Namespace:     sig.Namespace,
 		Reserved:      sig.Reserved,
 		HashAlgorithm: string(sig.HashAlgorithm),

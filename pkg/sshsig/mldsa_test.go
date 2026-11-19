@@ -5,6 +5,7 @@
 package sshsig
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/mldsa"
 	"crypto/rand"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -194,14 +196,118 @@ func TestMLDSA44Ed25519AgentSignatureVerifies(t *testing.T) {
 	}
 }
 
-func TestMLDSA44Ed25519CertificateUnsupported(t *testing.T) {
+func TestMLDSA44Ed25519RejectsTruncatedCertificate(t *testing.T) {
 	blob := ssh.Marshal(struct {
 		Name  string
 		Nonce []byte
 	}{"ssh-mldsa44-ed25519-cert", []byte("nonce")})
 	_, err := ParsePublicKey(base64.StdEncoding.EncodeToString(blob))
-	const want = "ssh-mldsa44-ed25519 certificates are not supported"
+	const want = "invalid ML-DSA certificate"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("ParsePublicKey() error = %v, want %q", err, want)
+	}
+}
+
+func TestParsePublicKeyBlobReturnsNilKeyOnError(t *testing.T) {
+	blob := ssh.Marshal(struct {
+		Name  string
+		Nonce []byte
+	}{"ssh-mldsa44-ed25519-cert", []byte("nonce")})
+	if pk, err := parsePublicKeyBlob(blob); pk != nil || err == nil {
+		t.Errorf("parsePublicKeyBlob() = %#v, %v, want nil and an error", pk, err)
+	}
+}
+
+// certificateTestSigner signs as a certificate it presents.
+type certificateTestSigner struct {
+	ssh.Signer
+	pk ssh.PublicKey
+}
+
+func (s certificateTestSigner) PublicKey() ssh.PublicKey { return s.pk }
+
+// issueMLDSACertificate certifies the signer's key, which ssh.Certificate's
+// SignCert cannot encode.
+func issueMLDSACertificate(t *testing.T, signer ssh.Signer, principals ...string) *ssh.Certificate {
+	t.Helper()
+	subject, err := verifiablePublicKey(signer.PublicKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := newSigner(t)
+	cert := &ssh.Certificate{Key: subject, CertType: ssh.UserCert, ValidBefore: ssh.CertTimeInfinity,
+		ValidPrincipals: principals, SignatureKey: ca.PublicKey()}
+	unsigned, err := marshalMLDSACertificate(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Drop the empty signature field.
+	if cert.Signature, err = ca.Sign(rand.Reader, unsigned[:len(unsigned)-4]); err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+func TestMLDSACertificateAcceptsOpaqueExtension(t *testing.T) {
+	const name = "binary@example.test"
+	ca := newMLDSA44Ed25519Signer(t)
+	cert := &ssh.Certificate{
+		Key: newSigner(t).PublicKey(), CertType: ssh.UserCert,
+		ValidBefore: ssh.CertTimeInfinity, SignatureKey: ca.PublicKey(),
+		Permissions: ssh.Permissions{Extensions: map[string]string{name: ""}},
+	}
+	field := func(data string) []byte {
+		tuple := ssh.Marshal(struct{ Name, Data string }{name, data})
+		return ssh.Marshal(struct{ Extension []byte }{tuple})
+	}
+	const payload = "\x01\x00\xff"
+	unsigned := cert.Marshal()
+	unsigned = bytes.Replace(unsigned[:len(unsigned)-4], field(""), field(payload), 1)
+	signature, err := ca.Sign(rand.Reader, unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := append(unsigned, ssh.Marshal(struct{ Signature []byte }{ssh.Marshal(signature)})...)
+	key, err := ParsePublicKeyBlob(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(key.Marshal(), blob) {
+		t.Error("Marshal() changed the signed certificate")
+	}
+	details, err := CertificateDetails(key)
+	if err != nil || details.Extensions[name] != payload {
+		t.Errorf("CertificateDetails() = %v, %v, want the opaque extension", details, err)
+	}
+}
+
+func TestSignatureCreateWithAConcreteMLDSACertificate(t *testing.T) {
+	signer := newMLDSA44Ed25519Signer(t)
+	cert := issueMLDSACertificate(t, signer, "alice@example.com")
+	sig, err := SignatureCreate(certificateTestSigner{signer, cert}, "file", strings.NewReader(goldenData))
+	if err != nil {
+		t.Fatalf("SignatureCreate() error = %v", err)
+	}
+	if err := SignatureVerify(strings.NewReader(goldenData), sig); err != nil {
+		t.Errorf("SignatureVerify() error = %v", err)
+	}
+	if err := CertificateValidAt(sig.PublicKey, time.Now()); err != nil {
+		t.Errorf("CertificateValidAt() error = %v", err)
+	}
+}
+
+func TestVerifyRejectsAMalformedConcreteMLDSACertificate(t *testing.T) {
+	signer := newMLDSA44Ed25519Signer(t)
+	sig, err := SignatureCreate(signer, "file", strings.NewReader(goldenData))
+	if err != nil {
+		t.Fatalf("SignatureCreate() error = %v", err)
+	}
+	sig.PublicKey = issueMLDSACertificate(t, signer, "alice@example.com\x00x")
+	for name, verify := range map[string]func(io.Reader, *Signature) error{
+		"Verify": Verify, "SignatureVerify": SignatureVerify,
+	} {
+		if err := verify(strings.NewReader(goldenData), sig); err == nil || !strings.Contains(err.Error(), "NUL byte") {
+			t.Errorf("%s() error = %v, want a NUL byte error", name, err)
+		}
 	}
 }

@@ -46,8 +46,10 @@ embedded in the signature.
 ### OpenSSH compatibility
 
 You can sign with `ssh-sign` and verify with `ssh-keygen`, or the other way
-around. `ssh-sign` supports the plain form of the `ssh-mldsa44-ed25519` hybrid
-key introduced in OpenSSH 10.6.
+around. Alongside conventional key types such as `ssh-ed25519`, `ssh-rsa` and
+`ecdsa-sha2-nistp256`, `ssh-sign` supports the hybrid post-quantum
+`ssh-mldsa44-ed25519` key type introduced in OpenSSH 10.6, also in
+certificates and as a CA.
 
 ### Signature inspection and JSON output
 

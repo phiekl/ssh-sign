@@ -23,8 +23,8 @@ signer's public key and a namespace that identifies the purpose of the signed
 data. **verify** uses an allowed signers file to decide which keys to trust.
 **check** can instead take a trusted key directly.
 
-The OpenSSH **ssh-mldsa44-ed25519** hybrid key type is supported, but not yet
-in certificates.
+The OpenSSH **ssh-mldsa44-ed25519** hybrid key type is supported, also in
+certificates and as a CA.
 
 ## Common options
 
@@ -97,8 +97,9 @@ consulted.
 - **-k**, **--auth-key** *key*: Require the given public key. The same key
   reference forms as **sign -k** are accepted. Use exactly one of **-k** and
   **-K**.
-- **-K**, **--no-auth-key**: Accept any key and skip certificate validity
-  checks.
+- **-K**, **--no-auth-key**: Accept any key. A certificate is still checked
+  for a valid CA signature, as described under
+  [VERIFICATION INPUTS](#verification-inputs).
 - **-n**, **--namespace** *name*: Require this namespace. Default is **file**.
   Incompatible with **-N**.
 - **-N**, **--no-namespace**: Accept any namespace.
@@ -156,11 +157,12 @@ ignores it. A signature read from stdin may also be preceded by up to 1024
 bytes of blank lines, as left by pasting into a terminal. A signature file
 must start with the header.
 
-When a certificate is checked, it must be a user certificate valid at the
-chosen time, with a valid CA signature. Authentication compares the full
-certificate against the expected key or allowed signers entry, or, for a
-**cert-authority** entry, the CA key. Embedded principals are checked only
-for **cert-authority** entries.
+**verify** and **check -k** accept a certificate only if it is a user
+certificate with a valid CA signature, valid at the chosen time. **check -K**
+verifies only the CA signature and accepts any certificate type and validity
+period. Authentication compares the full certificate against the expected key
+or allowed signers entry, or, for a **cert-authority** entry, the CA key.
+Embedded principals are checked only for **cert-authority** entries.
 
 ## Files
 

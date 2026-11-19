@@ -9,11 +9,15 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // testCertificate creates a certificate with Unix-second validity bounds.
@@ -103,6 +107,19 @@ func TestCertificateValidAt(t *testing.T) {
 				t.Errorf("CertificateValidAt() error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestParsePublicKeyBlobRejectsUnknownCertificateType(t *testing.T) {
+	const unknownType = 3
+	cert := testCertificate(t, unknownType, 0, ssh.CertTimeInfinity)
+	if _, err := ParsePublicKeyBlob(cert.Marshal()); err == nil ||
+		!strings.Contains(err.Error(), "unsupported certificate type 3") {
+		t.Errorf("ParsePublicKeyBlob() error = %v, want an unsupported type error", err)
+	}
+	host := testCertificate(t, ssh.HostCert, 0, ssh.CertTimeInfinity)
+	if _, err := ParsePublicKeyBlob(host.Marshal()); err != nil {
+		t.Errorf("ParsePublicKeyBlob() rejected a host certificate: %v", err)
 	}
 }
 
@@ -215,6 +232,9 @@ func TestCertificateValidAtRejectsAForgedCertificate(t *testing.T) {
 			if CertificateValidAt(wrapped, now) == nil {
 				t.Error("CertificateValidAt() accepted a forged certificate behind an agent key")
 			}
+			if err := CertificateSignatureValid(wrapped); err == nil {
+				t.Error("CertificateSignatureValid() accepted an invalid CA signature")
+			}
 		})
 	}
 }
@@ -324,11 +344,230 @@ func TestPublicKeyEqualComparesTheReceivedEncoding(t *testing.T) {
 	}
 }
 
-// Changing a certificate obtained from AsCertificate must not change what
+// Changing a certificate obtained from CertificateDetails must not change what
 // the received key authorizes; only its CA-signed encoding counts.
-func TestAsCertificateReturnsACopy(t *testing.T) {
+func TestCertificateDetailsReturnsACopy(t *testing.T) {
 	blob := reencodedCertificate(t, true)
 	pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(blob))
+	if err != nil {
+		t.Fatalf("ParsePublicKey() error = %v", err)
+	}
+	cert, err := CertificateDetails(pk)
+	if err != nil {
+		t.Fatalf("CertificateDetails() error = %v", err)
+	}
+	nonce, reserved, sig := bytes.Clone(cert.Nonce), bytes.Clone(cert.Reserved), bytes.Clone(cert.Signature.Blob)
+	cert.ValidPrincipals[0] = "mallory@example.com"
+	cert.ValidPrincipals = append(cert.ValidPrincipals, "mallory@example.com")
+	cert.Nonce[0] ^= 1
+	cert.Reserved = append(cert.Reserved, 1)
+	cert.CriticalOptions["force-command"] = "true"
+	cert.Extensions["permit-user-rc"] = ""
+	cert.Signature.Blob[0] ^= 1
+
+	again, err := CertificateDetails(pk)
+	if err != nil {
+		t.Fatalf("CertificateDetails() error = %v", err)
+	}
+	if len(again.ValidPrincipals) != 1 || again.ValidPrincipals[0] != "alice@example.com" {
+		t.Errorf("ValidPrincipals = %q after changing a copy, want [alice@example.com]", again.ValidPrincipals)
+	}
+	if !bytes.Equal(again.Nonce, nonce) || !bytes.Equal(again.Reserved, reserved) ||
+		len(again.CriticalOptions) != 0 || len(again.Extensions) != 1 ||
+		!bytes.Equal(again.Signature.Blob, sig) {
+		t.Errorf("CertificateDetails() = %+v after changing a copy", again)
+	}
+	if err := CertificateSignatureValid(pk); err != nil {
+		t.Errorf("CertificateSignatureValid() error = %v after changing a copy", err)
+	}
+}
+
+// The keys of a copy may expose their bytes, so the copy needs its own keys.
+func TestCertificateDetailsCopiesTheKeys(t *testing.T) {
+	pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(reencodedCertificate(t, true)))
+	if err != nil {
+		t.Fatalf("ParsePublicKey() error = %v", err)
+	}
+	want, err := CertificateDetails(pk)
+	if err != nil {
+		t.Fatalf("CertificateDetails() error = %v", err)
+	}
+	subject, ca := want.Key.Marshal(), want.SignatureKey.Marshal()
+	for _, key := range []ssh.PublicKey{want.Key, want.SignatureKey} {
+		key.(ssh.CryptoPublicKey).CryptoPublicKey().(ed25519.PublicKey)[0] ^= 1
+	}
+	again, err := CertificateDetails(pk)
+	if err != nil {
+		t.Fatalf("CertificateDetails() error = %v", err)
+	}
+	if !bytes.Equal(again.Key.Marshal(), subject) || !bytes.Equal(again.SignatureKey.Marshal(), ca) {
+		t.Error("changing the keys of a copy changed the certificate")
+	}
+	if err := CertificateSignatureValid(pk); err != nil {
+		t.Errorf("CertificateSignatureValid() error = %v after changing a copy", err)
+	}
+}
+
+// OpenSSH's certificate parser limits apply with either kind of CA.
+func TestParsePublicKeyRejectsCertificatesOpenSSHCannotParse(t *testing.T) {
+	principals := func(n int) []string {
+		names := make([]string, n)
+		for i := range names {
+			names[i] = fmt.Sprintf("user%d@example.com", i)
+		}
+		return names
+	}
+	tests := []struct {
+		name       string
+		keyID      string
+		principals []string
+		wantErr    string
+	}{
+		{name: "256 principals", principals: principals(256)},
+		{name: "257 principals", principals: principals(257),
+			wantErr: "certificate has more than 256 principals"},
+		{name: "NUL in the key ID", keyID: "revoked\x00x",
+			wantErr: "certificate key ID contains a NUL byte"},
+		{name: "NUL in a principal", principals: []string{"alice@example.com", "bob\x00x"},
+			wantErr: "certificate principal contains a NUL byte"},
+		{name: "trailing NULs", keyID: "cert\x00", principals: []string{"alice@example.com\x00"}},
+	}
+	for _, ca := range []ssh.Signer{newSigner(t), newMLDSA44Ed25519Signer(t)} {
+		for _, tt := range tests {
+			t.Run(ca.PublicKey().Type()+" "+tt.name, func(t *testing.T) {
+				cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+				cert.KeyId = tt.keyID
+				cert.ValidPrincipals = tt.principals
+				if err := cert.SignCert(rand.Reader, ca); err != nil {
+					t.Fatalf("signing certificate: %v", err)
+				}
+				pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(cert.Marshal()))
+				if tt.wantErr == "" {
+					if err != nil {
+						t.Fatalf("ParsePublicKey() error = %v", err)
+					}
+					parsed, err := CertificateDetails(pk)
+					if err != nil {
+						t.Fatalf("CertificateDetails() error = %v", err)
+					}
+					// The fields keep the signed bytes, which re-encoding must reproduce.
+					if parsed.KeyId != tt.keyID || !slices.Equal(parsed.ValidPrincipals, tt.principals) {
+						t.Errorf("key ID %q, principals %q, want %q, %q",
+							parsed.KeyId, parsed.ValidPrincipals, tt.keyID, tt.principals)
+					}
+					if err := CertificateValidAt(pk, time.Now()); err != nil {
+						t.Errorf("CertificateValidAt() error = %v", err)
+					}
+					keyID, principals := CertificateKeyID(parsed), CertificatePrincipals(parsed)
+					if keyID != strings.TrimSuffix(tt.keyID, "\x00") || len(principals) != len(tt.principals) ||
+						principals[0] != strings.TrimSuffix(tt.principals[0], "\x00") {
+						t.Errorf("CertificateKeyID() = %q, CertificatePrincipals() = %q, "+
+							"want them without a trailing NUL", keyID, principals)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("ParsePublicKey() error = %v, want it to contain %q", err, tt.wantErr)
+				}
+			})
+		}
+	}
+}
+
+// The immutable certificate supports ML-DSA encoding through all public APIs.
+func TestAsCertificateResultWorksWithMLDSASubjects(t *testing.T) {
+	line, err := os.ReadFile("testdata/mldsa44-ed25519-cert.pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pk, err := ParsePublicKeyLine(string(line))
+	if err != nil {
+		t.Fatalf("ParsePublicKeyLine() error = %v", err)
+	}
+	cert, err := AsCertificate(pk)
+	if err != nil {
+		t.Fatalf("AsCertificate() error = %v", err)
+	}
+	if err := CertificateValidAt(cert, time.Now()); err != nil {
+		t.Errorf("CertificateValidAt() error = %v", err)
+	}
+	if !PublicKeyEqual(cert, pk) {
+		t.Error("PublicKeyEqual() = false, want true")
+	}
+	if got, want := PublicKeyString(cert), PublicKeyString(pk); got != want {
+		t.Errorf("PublicKeyString() = %q, want %q", got, want)
+	}
+	if got, want := NewPublicKeyInfo(cert), NewPublicKeyInfo(pk); got != want {
+		t.Errorf("NewPublicKeyInfo() = %+v, want %+v", got, want)
+	}
+	sig := &Signature{Version: 1, PublicKey: pk, Namespace: "file", HashAlgorithm: HashSHA512,
+		Signature: &ssh.Signature{Format: KeyAlgoMLDSA44Ed25519}}
+	want := Armor(sig)
+	sig.PublicKey = cert
+	if got := Armor(sig); !bytes.Equal(got, want) {
+		t.Errorf("Armor() = %q, want %q", got, want)
+	}
+	_, other, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyring := agent.NewKeyring()
+	if err := keyring.Add(agent.AddedKey{PrivateKey: other}); err != nil {
+		t.Fatal(err)
+	}
+	const wantErr = "no key matched"
+	if _, err := AgentSigner(nil, nil, keyring, cert); err == nil ||
+		!strings.Contains(err.Error(), wantErr) {
+		t.Errorf("AgentSigner() error = %v, want it to contain %q", err, wantErr)
+	}
+}
+
+type countingKey struct {
+	ssh.PublicKey
+	verifications int
+}
+
+func (k *countingKey) Verify(data []byte, sig *ssh.Signature) error {
+	k.verifications++
+	return k.PublicKey.Verify(data, sig)
+}
+
+func TestCertificateValidAtVerifiesTheCASignatureOnce(t *testing.T) {
+	cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+	blob := cert.Marshal()
+	ca := &countingKey{PublicKey: cert.SignatureKey}
+	cert.SignatureKey = ca
+	pk := &Certificate{cert: cert, blob: blob}
+	for range 3 {
+		if err := CertificateValidAt(pk, time.Now()); err != nil {
+			t.Fatalf("CertificateValidAt() error = %v", err)
+		}
+	}
+	if ca.verifications != 1 {
+		t.Errorf("CA signature verified %d times, want once", ca.verifications)
+	}
+}
+
+func TestCertificateValidAtChecksConcreteCertificateStrings(t *testing.T) {
+	for name, change := range map[string]func(*ssh.Certificate){
+		"key ID":     func(c *ssh.Certificate) { c.KeyId = "cert\x00x" },
+		"principal":  func(c *ssh.Certificate) { c.ValidPrincipals = []string{"alice@example.com\x00x"} },
+		"principals": func(c *ssh.Certificate) { c.ValidPrincipals = make([]string, 257) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+			change(cert)
+			if err := cert.SignCert(rand.Reader, newSigner(t)); err != nil {
+				t.Fatal(err)
+			}
+			if err := CertificateValidAt(cert, time.Now()); err == nil {
+				t.Error("CertificateValidAt() error = nil")
+			}
+		})
+	}
+}
+
+// AsCertificate keeps the received encoding, which x/crypto/ssh re-encodes.
+func TestCertificateValidAtUsesTheEncodingAsCertificateParsed(t *testing.T) {
+	pk, err := ParsePublicKey(base64.StdEncoding.EncodeToString(reencodedCertificate(t, true)))
 	if err != nil {
 		t.Fatalf("ParsePublicKey() error = %v", err)
 	}
@@ -336,14 +575,82 @@ func TestAsCertificateReturnsACopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AsCertificate() error = %v", err)
 	}
-	cert.ValidPrincipals[0] = "mallory@example.com"
-	cert.ValidPrincipals = append(cert.ValidPrincipals, "mallory@example.com")
-
-	again, err := AsCertificate(pk)
-	if err != nil {
-		t.Fatalf("AsCertificate() error = %v", err)
+	if err := CertificateValidAt(cert, time.Now()); err != nil {
+		t.Errorf("CertificateValidAt(AsCertificate()) error = %v", err)
 	}
-	if len(again.ValidPrincipals) != 1 || again.ValidPrincipals[0] != "alice@example.com" {
-		t.Errorf("ValidPrincipals = %q after changing a copy, want [alice@example.com]", again.ValidPrincipals)
+	if !PublicKeyEqual(cert, pk) {
+		t.Error("PublicKeyEqual(AsCertificate(), pk) = false")
+	}
+	if cert != pk {
+		t.Error("AsCertificate() did not reuse the parsed certificate")
+	}
+
+	details, err := CertificateDetails(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details.ValidPrincipals = []string{"mallory@example.com"}
+	if err := CertificateValidAt(details, time.Now()); err == nil ||
+		!strings.Contains(err.Error(), "certificate signature is invalid") {
+		t.Errorf("CertificateValidAt() error = %v after changing a principal, want an invalid signature", err)
+	}
+}
+
+func TestAsCertificateChecksConcreteCertificateStrings(t *testing.T) {
+	cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+	cert.ValidPrincipals = []string{"alice@example.com\x00x"}
+	if got, err := AsCertificate(cert); got != nil || err == nil || !strings.Contains(err.Error(), "NUL byte") {
+		t.Errorf("AsCertificate() = %v, %v, want a NUL byte error", got, err)
+	}
+}
+
+func TestAsCertificateLeavesCallerExtraDataIntact(t *testing.T) {
+	cert := testCertificate(t, ssh.UserCert, 0, ssh.CertTimeInfinity)
+	cert.ExtraData = map[any]any{"caller": "metadata"}
+	key, err := AsCertificate(cert)
+	if err != nil || key == nil {
+		t.Fatalf("AsCertificate() = %v, %v, want an immutable certificate", key, err)
+	}
+	if len(cert.ExtraData) != 1 || cert.ExtraData["caller"] != "metadata" {
+		t.Errorf("caller ExtraData = %v, want the original metadata", cert.ExtraData)
+	}
+	details, err := CertificateDetails(key)
+	if err != nil || details == nil {
+		t.Fatalf("CertificateDetails() = %v, %v, want certificate fields", details, err)
+	}
+	if len(details.ExtraData) != 0 {
+		t.Errorf("decoded ExtraData = %v, want no internal encoding data", details.ExtraData)
+	}
+}
+
+// A parsed certificate is checked once; validating the signature reuses it.
+func TestValidateStructureDoesNotReparseCertificates(t *testing.T) {
+	signer := newSigner(t)
+	cert := &ssh.Certificate{Key: signer.PublicKey(), CertType: ssh.UserCert, ValidBefore: ssh.CertTimeInfinity}
+	for i := range 256 {
+		cert.ValidPrincipals = append(cert.ValidPrincipals, fmt.Sprintf("user%d@example.com", i))
+	}
+	if err := cert.SignCert(rand.Reader, newSigner(t)); err != nil {
+		t.Fatal(err)
+	}
+	certSigner, err := ssh.NewCertSigner(cert, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allocs := make(map[string]float64)
+	for name, s := range map[string]ssh.Signer{"plain": signer, "certificate": certSigner} {
+		created, err := SignatureCreate(s, "file", strings.NewReader("data"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig, err := ParseSignature(Marshal(created))
+		if err != nil {
+			t.Fatal(err)
+		}
+		allocs[name] = testing.AllocsPerRun(10, func() { _ = validateStructure(sig) })
+	}
+	if allocs["certificate"] > allocs["plain"] {
+		t.Errorf("validateStructure() allocations: %v for a certificate, %v for a plain key",
+			allocs["certificate"], allocs["plain"])
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"os/exec"
@@ -684,6 +685,85 @@ func signWithOpenSSHCertificate(
 	return fields[0] + " " + fields[1], signed + ".sig"
 }
 
+func TestMLDSACertificateMatchesOpenSSH(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	requireKeyType(t, keygen, "mldsa44-ed25519")
+	sshAdd := requireProgram(t, "ssh-add")
+	startRealSSHAgent(t)
+
+	const mldsa = "mldsa44-ed25519"
+	for _, tt := range []struct{ subject, ca string }{
+		{mldsa, "ed25519"},
+		{mldsa, "rsa"},
+		{mldsa, "ecdsa"},
+		{mldsa, mldsa},
+		{"ed25519", mldsa},
+		{"rsa", mldsa},
+		{"ecdsa", mldsa},
+	} {
+		t.Run(tt.subject+"/ca="+tt.ca, func(t *testing.T) {
+			testMLDSACertificateInterop(t, keygen, sshAdd, tt.subject, tt.ca)
+		})
+	}
+}
+
+func testMLDSACertificateInterop(t *testing.T, keygen, sshAdd, subjectType, caType string) {
+	t.Helper()
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key")
+	ca := filepath.Join(dir, "ca")
+	dataPath := filepath.Join(dir, "data")
+	allowed := filepath.Join(dir, "allowed_signers")
+	revoked := filepath.Join(dir, "revoked")
+	const data = "ML-DSA certificate interoperability test\n"
+	const principal = "mldsa-test@example.test"
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keyLine := generateOpenSSHKey(t, keygen, subjectType, key)
+	caLine := generateOpenSSHKey(t, keygen, caType, ca)
+	certLine, signature := signWithOpenSSHCertificate(t, keygen, sshAdd, ca, key, dataPath,
+		"mldsa", "-n", principal, "-V", "-1d:+1d")
+
+	armored, stderr, code := run(t, "sign", "-k", certLine, "-f", dataPath, "-n", "file")
+	if code != 0 {
+		t.Fatalf("sign exited %d, stderr = %q", code, stderr)
+	}
+	ourSignature := filepath.Join(dir, "ours.sig")
+	if err := os.WriteFile(ourSignature, []byte(armored), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []string{"cert-authority " + caLine, certLine} {
+		writeAllowedSigner(t, allowed, principal, entry)
+		verifyWithOpenSSH(t, keygen, allowed, ourSignature, "file", principal, data)
+		stdout, stderr, code := run(t, "verify", "-a", allowed, "-f", dataPath,
+			"-s", signature, "-n", "file", "-p", principal)
+		if code != 0 || !strings.Contains(stdout, "verification   = valid") {
+			t.Fatalf("verify exited %d, stdout = %q, stderr = %q", code, stdout, stderr)
+		}
+	}
+
+	writeAllowedSigner(t, allowed, "*", "cert-authority "+caLine)
+	_, _, code = run(t, "verify", "-a", allowed, "-f", dataPath, "-s", signature,
+		"-n", "file", "-p", "other@example.test")
+	if code != 1 {
+		t.Errorf("verify with another principal exited %d, want 1", code)
+	}
+	for _, entry := range []struct{ key, diagnostic string }{
+		{keyLine, "signer public key is revoked"},
+		{caLine, "signer certificate authority is revoked"},
+	} {
+		if err := os.WriteFile(revoked, []byte(entry.key+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, stderr, code := run(t, "verify", "-a", allowed, "-r", revoked,
+			"-f", dataPath, "-s", signature, "-n", "file", "-p", principal)
+		if code != 1 || !strings.Contains(stderr, entry.diagnostic) {
+			t.Errorf("verify with revocation exited %d, stderr = %q, want %q", code, stderr, entry.diagnostic)
+		}
+	}
+}
+
 func TestCertAuthorityMatchesOpenSSH(t *testing.T) {
 	keygen := requireProgram(t, "ssh-keygen")
 	sshAdd := requireProgram(t, "ssh-add")
@@ -882,6 +962,35 @@ func TestRevokedKeysMatchOpenSSH(t *testing.T) {
 	plainSig := dataPath + ".sig"
 	writeAllowedSigner(t, allowed, "alice@example.com", keyLine+"\n* cert-authority "+caLine)
 
+	t.Run("configured and explicit KRLs", func(t *testing.T) {
+		configDir := t.TempDir()
+		t.Setenv("SSH_SIGN_CONFIG_DIR", configDir)
+		revokedDir := writeRevoked(t, configDir, nil)
+		configured := filepath.Join(revokedDir, "certificates.conf")
+		explicit := filepath.Join(configDir, "extra.krl")
+		for _, policy := range []struct{ path, spec string }{
+			{configured, "serial: 40\n"},
+			{explicit, "serial: 41\n"},
+		} {
+			spec := filepath.Join(t.TempDir(), "spec")
+			if err := os.WriteFile(spec, []byte(policy.spec), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			runProgram(t, "", keygen, "-q", "-k", "-f", policy.path, "-s", ca+".pub", spec)
+		}
+		for _, tt := range []struct{ signature, source string }{
+			{certSig, configured},
+			{renewedSig, explicit},
+		} {
+			_, stderr, code := run(t, "verify", "-a", allowed, "-r", explicit,
+				"-f", dataPath, "-s", tt.signature, "-n", "file", "-p", "alice@example.com")
+			want := fmt.Sprintf("signer certificate is revoked: file=%q", tt.source)
+			if code != 1 || !strings.Contains(stderr, want) {
+				t.Errorf("verify exited %d with %q, want 1 and %q", code, stderr, want)
+			}
+		}
+	})
+
 	tests := []struct {
 		name, content string
 		// revokedPlain and revokedCert report which signatures are rejected.
@@ -1004,6 +1113,35 @@ func TestRevokedKeysMatchOpenSSH(t *testing.T) {
 		check(t, krl, certSig, true, false)
 		check(t, krl, renewedSig, false, false)
 	})
+	// OpenSSH loads a certificate as a CA key, but it never matches a signer.
+	t.Run("KRL with a certificate as CA key", func(t *testing.T) {
+		blob, err := base64.StdEncoding.DecodeString(strings.Fields(certLine)[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		record := func(kind byte, data []byte) []byte {
+			return ssh.Marshal(struct {
+				Type byte
+				Data []byte
+			}{kind, data})
+		}
+		certificates := ssh.Marshal(struct{ CA, Reserved []byte }{CA: blob})
+		certificates = append(certificates, record(0x23, ssh.Marshal(struct{ ID string }{"cert"}))...)
+		header := ssh.Marshal(struct {
+			Format                    uint32
+			Version, Generated, Flags uint64
+			Reserved, Comment         string
+		}{Format: 1})
+		data := append([]byte("SSHKRL\n\x00"), header...)
+		data = append(data, record(1, certificates)...)
+
+		krl := filepath.Join(t.TempDir(), "revoked.krl")
+		if err := os.WriteFile(krl, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		check(t, krl, plainSig, false, false)
+		check(t, krl, certSig, false, false)
+	})
 	// OpenSSH fails to load a KRL whose serial bitmap exceeds 2048 bytes.
 	for _, tt := range []struct {
 		name    string
@@ -1038,6 +1176,112 @@ func TestRevokedKeysMatchOpenSSH(t *testing.T) {
 			}
 			check(t, krl, plainSig, tt.revoked, false)
 			check(t, krl, certSig, tt.revoked, false)
+		})
+	}
+}
+
+// TestRevokedKeyTypesMatchOpenSSH revokes signers and CAs of each key type
+// through text lists and KRLs.
+func TestRevokedKeyTypesMatchOpenSSH(t *testing.T) {
+	keygen := requireProgram(t, "ssh-keygen")
+	sshAdd := requireProgram(t, "ssh-add")
+	startRealSSHAgent(t)
+
+	const mldsa = "mldsa44-ed25519"
+	for _, tt := range []struct{ subject, ca string }{
+		{"ecdsa", "ecdsa"},
+		{"rsa", "rsa"},
+		{"ecdsa", "rsa"},
+		{mldsa, mldsa},
+		{mldsa, "ed25519"},
+		{"ed25519", mldsa},
+	} {
+		t.Run(tt.subject+"/ca="+tt.ca, func(t *testing.T) {
+			requireKeyType(t, keygen, tt.subject)
+			requireKeyType(t, keygen, tt.ca)
+			testRevokedKeyType(t, keygen, sshAdd, tt.subject, tt.ca)
+		})
+	}
+}
+
+func testRevokedKeyType(t *testing.T, keygen, sshAdd, subjectType, caType string) {
+	t.Helper()
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key")
+	ca := filepath.Join(dir, "ca")
+	dataPath := filepath.Join(dir, "data")
+	allowed := filepath.Join(dir, "allowed_signers")
+	const data = "revoked key types differential test\n"
+	const principal = "alice@example.com"
+	if err := os.WriteFile(dataPath, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keyLine := generateOpenSSHKey(t, keygen, subjectType, key)
+	caLine := generateOpenSSHKey(t, keygen, caType, ca)
+	certLine, certSig := signWithOpenSSHCertificate(t, keygen, sshAdd, ca, key, dataPath,
+		"cert", "-n", principal, "-V", "-1d:+1d", "-z", "40")
+	runProgram(t, "", keygen, "-Y", "sign", "-f", key, "-n", "file", dataPath)
+	plainSig := dataPath + ".sig"
+	writeAllowedSigner(t, allowed, principal, keyLine+"\n* cert-authority "+caLine)
+
+	check := func(t *testing.T, path, signature string, wantRevoked bool) {
+		t.Helper()
+		_, stderr, ourCode := run(t, "verify", "-a", allowed, "-r", path, "-f", dataPath,
+			"-s", signature, "-n", "file", "-p", principal)
+		openSSHOutput, openSSHCode := runProgramStatus(t, data, keygen, "-Y", "verify",
+			"-f", allowed, "-r", path, "-I", principal, "-n", "file", "-s", signature)
+		if (openSSHCode == 0) != !wantRevoked {
+			t.Errorf("%s: OpenSSH accepted = %v, want %v (OpenSSH output: %q)",
+				filepath.Base(signature), openSSHCode == 0, !wantRevoked, openSSHOutput)
+		}
+		if (ourCode == 0) != !wantRevoked || (wantRevoked && !strings.Contains(stderr, " is revoked: ")) {
+			t.Errorf("%s: accepted = %v, want %v (stderr: %q)",
+				filepath.Base(signature), ourCode == 0, !wantRevoked, stderr)
+		}
+	}
+
+	for _, tt := range []struct {
+		name, content             string
+		revokedPlain, revokedCert bool
+	}{
+		{name: "text signer key", content: keyLine, revokedPlain: true, revokedCert: true},
+		{name: "text certificate", content: certLine, revokedPlain: true, revokedCert: true},
+		{name: "text CA key", content: caLine, revokedCert: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "revoked")
+			if err := os.WriteFile(path, []byte(tt.content+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			check(t, path, plainSig, tt.revokedPlain)
+			check(t, path, certSig, tt.revokedCert)
+		})
+	}
+	for _, tt := range []struct {
+		name, spec, authority     string
+		revokedPlain, revokedCert bool
+	}{
+		{name: "KRL signer key", spec: keyLine, revokedPlain: true, revokedCert: true},
+		{name: "KRL CA key", spec: caLine, revokedCert: true},
+		{name: "KRL signer SHA1", spec: "sha1: " + keyLine, revokedPlain: true, revokedCert: true},
+		{name: "KRL CA SHA256", spec: "sha256: " + caLine, revokedCert: true},
+		{name: "KRL certificate serial", spec: "serial: 40", authority: ca + ".pub", revokedCert: true},
+		{name: "KRL certificate key ID", spec: "id: cert", authority: ca + ".pub", revokedCert: true},
+		{name: "KRL serial from another CA", spec: "serial: 40", authority: key + ".pub"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := filepath.Join(t.TempDir(), "spec")
+			krl := filepath.Join(filepath.Dir(spec), "revoked.krl")
+			if err := os.WriteFile(spec, []byte(tt.spec+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"-q", "-k", "-f", krl}
+			if tt.authority != "" {
+				args = append(args, "-s", tt.authority)
+			}
+			runProgram(t, "", keygen, append(args, spec)...)
+			check(t, krl, plainSig, tt.revokedPlain)
+			check(t, krl, certSig, tt.revokedCert)
 		})
 	}
 }
@@ -1092,9 +1336,9 @@ func TestCertificateEncodingMatchesOpenSSH(t *testing.T) {
 		t.Fatalf("reading signature: %v", err)
 	}
 	original := sig.PublicKey.Marshal()
-	cert, err := sshsig.AsCertificate(sig.PublicKey)
+	cert, err := sshsig.CertificateDetails(sig.PublicKey)
 	if err != nil || cert == nil {
-		t.Fatalf("AsCertificate() = %v, %v", cert, err)
+		t.Fatalf("CertificateDetails() = %v, %v", cert, err)
 	}
 
 	// Encode the empty permit-pty payload as an encoded empty string.
@@ -1135,6 +1379,42 @@ func TestCertificateEncodingMatchesOpenSSH(t *testing.T) {
 	}
 	tamperedSig := writeSig("tampered", tampered)
 	resignedSig := writeSig("resigned", resigned)
+	resignWith := func(name string, change func(*ssh.Certificate)) string {
+		changed := *cert
+		change(&changed)
+		if err := changed.SignCert(rand.Reader, caSigner); err != nil {
+			t.Fatalf("re-signing: %v", err)
+		}
+		return writeSig(name, changed.Marshal())
+	}
+	withPrincipals := func(n int) func(*ssh.Certificate) {
+		return func(c *ssh.Certificate) {
+			c.ValidPrincipals = []string{"alice@example.com"}
+			for i := 1; i < n; i++ {
+				c.ValidPrincipals = append(c.ValidPrincipals, fmt.Sprintf("user%d@example.com", i))
+			}
+		}
+	}
+	maxPrincipalsSig := resignWith("256-principals", withPrincipals(256))
+	tooManyPrincipalsSig := resignWith("257-principals", withPrincipals(257))
+	nulKeyIDSig := resignWith("nul-key-id", func(c *ssh.Certificate) { c.KeyId = "cert\x00x" })
+	nulPrincipalSig := resignWith("nul-principal", func(c *ssh.Certificate) {
+		c.ValidPrincipals = append(c.ValidPrincipals, "bob\x00x")
+	})
+	// OpenSSH drops a final NUL byte, so this key ID is "cert".
+	trailingNULSig := resignWith("trailing-nul", func(c *ssh.Certificate) {
+		c.KeyId = "cert\x00"
+		c.ValidPrincipals = []string{"alice@example.com\x00"}
+	})
+	krlSpec := filepath.Join(dir, "krl-spec")
+	if err := os.WriteFile(krlSpec, []byte("id: cert\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runProgram(t, "", keygen, "-q", "-k", "-f", krlSpec+".krl", "-s", ca+".pub", krlSpec)
+	keyIDKRL, err := os.ReadFile(krlSpec + ".krl")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// A forged revoked certificate names another key under the CA's signature.
 	forged := *cert
@@ -1158,6 +1438,16 @@ func TestCertificateEncodingMatchesOpenSSH(t *testing.T) {
 			signature: resignedSig, wantAccepted: true},
 		{name: "re-encoded entry differs from the original",
 			allowed: "alice@example.com " + certLine, signature: resignedSig},
+		{name: "256 principals", allowed: "* cert-authority " + caLine,
+			signature: maxPrincipalsSig, wantAccepted: true},
+		{name: "257 principals", allowed: "* cert-authority " + caLine,
+			signature: tooManyPrincipalsSig},
+		{name: "NUL in the key ID", allowed: "* cert-authority " + caLine, signature: nulKeyIDSig},
+		{name: "NUL in a principal", allowed: "* cert-authority " + caLine, signature: nulPrincipalSig},
+		{name: "trailing NULs", allowed: "alice@example.com cert-authority " + caLine,
+			signature: trailingNULSig, wantAccepted: true},
+		{name: "trailing NUL in a revoked key ID", allowed: "* cert-authority " + caLine,
+			revoked: string(keyIDKRL), signature: trailingNULSig},
 		{name: "forged revoked certificate", allowed: "* cert-authority " + caLine,
 			revoked: forgedLine + "\n", signature: certSig},
 		{name: "forged revoked certificate, plain key", allowed: "alice@example.com " + keyLine,

@@ -6,6 +6,9 @@ package sshsig
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
 	"strings"
@@ -208,6 +211,62 @@ func TestParsePublicKeyBlob(t *testing.T) {
 	}
 	if _, err := ParsePublicKeyBlob([]byte("garbage")); err == nil {
 		t.Error("ParsePublicKeyBlob() error = nil for garbage")
+	}
+}
+
+func TestSecurityKeyApplicationUsesOpenSSHCString(t *testing.T) {
+	ed25519Key := newSigner(t).PublicKey().(ssh.CryptoPublicKey).CryptoPublicKey()
+	ecdsaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name string
+		blob func(string) []byte
+	}{
+		{ssh.KeyAlgoSKED25519, func(app string) []byte {
+			return ssh.Marshal(struct {
+				Type        string
+				Key         []byte
+				Application string
+			}{ssh.KeyAlgoSKED25519, ed25519Key.(ed25519.PublicKey), app})
+		}},
+		{ssh.KeyAlgoSKECDSA256, func(app string) []byte {
+			return ssh.Marshal(struct {
+				Type, Curve string
+				Key         []byte
+				Application string
+			}{ssh.KeyAlgoSKECDSA256, "nistp256", elliptic.Marshal(ecdsaKey.Curve, ecdsaKey.X, ecdsaKey.Y), app})
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const app = "ssh:example.test"
+			want := tt.blob(app)
+			got, err := ParsePublicKeyBlob(tt.blob(app + "\x00"))
+			if err != nil || !bytes.Equal(got.Marshal(), want) {
+				t.Fatalf("ParsePublicKeyBlob() = %v, %v, want the normalized key", got, err)
+			}
+			if _, err := ParsePublicKeyBlob(tt.blob(app + "\x00invalid")); err == nil {
+				t.Error("ParsePublicKeyBlob() accepted an embedded NUL")
+			}
+			subject, err := ssh.ParsePublicKey(tt.blob(app + "\x00"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cert := &ssh.Certificate{Key: subject, CertType: ssh.UserCert, ValidBefore: ssh.CertTimeInfinity}
+			if err := cert.SignCert(rand.Reader, newSigner(t)); err != nil {
+				t.Fatal(err)
+			}
+			blob := cert.Marshal()
+			key, err := ParsePublicKeyBlob(blob)
+			if err != nil || !bytes.Equal(key.Marshal(), blob) {
+				t.Fatalf("ParsePublicKeyBlob(certificate) = %v, %v, want the signed encoding", key, err)
+			}
+			plain, err := PlainPublicKeyBlob(key)
+			if err != nil || !bytes.Equal(plain, want) {
+				t.Errorf("PlainPublicKeyBlob() = %x, %v, want the normalized subject", plain, err)
+			}
+		})
 	}
 }
 

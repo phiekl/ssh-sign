@@ -98,9 +98,11 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 	}
 
 	res := CheckResult{}
+	var verificationErr error
 	if opts.NoAuthKey {
-		// -K skips signer authentication, including certificate validity.
+		// -K skips signer authentication and the certificate validity window.
 		res.Authentication = "disabled"
+		verificationErr = sshsig.CertificateSignatureValid(sig.PublicKey)
 	} else {
 		// Report key mismatches and certificate errors independently.
 		res.Authentication = "valid"
@@ -128,7 +130,10 @@ func Check(opts *CheckOpts) (*CheckResult, []error) {
 		))
 	}
 
-	switch err := sshsig.SignatureVerify(opts.VerifyFile, sig); {
+	if verificationErr == nil {
+		verificationErr = sshsig.SignatureVerify(opts.VerifyFile, sig)
+	}
+	switch err := verificationErr; {
 	case err == nil:
 		res.Verification = "valid"
 	case sshsig.IsReadError(err):

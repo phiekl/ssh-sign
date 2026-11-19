@@ -129,14 +129,14 @@ func (s rsaSHA512Signer) Sign(random io.Reader, data []byte) (*ssh.Signature, er
 // publicKeyType returns the signing key type, unwrapping certificates
 // including those held by an agent.
 func publicKeyType(pk ssh.PublicKey) string {
-	if cert, _ := AsCertificate(pk); cert != nil {
+	if cert, _ := unwrapCertificate(pk); cert != nil {
 		return cert.Key.Type()
 	}
 	return pk.Type()
 }
 
 func isRSACertificate(pk ssh.PublicKey) bool {
-	cert, _ := AsCertificate(pk)
+	cert, _ := unwrapCertificate(pk)
 	return cert != nil && cert.Key.Type() == ssh.KeyAlgoRSA
 }
 

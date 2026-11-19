@@ -41,7 +41,7 @@ func ConnectAgent(log *slog.Logger) (net.Conn, agent.Agent, error) {
 func AgentSigner(
 	log *slog.Logger, conn net.Conn, a agent.Agent, pk ssh.PublicKey,
 ) (ssh.Signer, error) {
-	return agentSigner(log, conn, a, pk, agentTimeout)
+	return agentSigner(log, conn, a, encodable(pk), agentTimeout)
 }
 
 func agentSigner(
@@ -81,7 +81,7 @@ func agentSigner(
 	// OpenSSH agents may ignore RSA-SHA2 flags when asked to sign using a
 	// certificate key blob. Rebuild the certificate signer over the listed
 	// underlying RSA key so algorithm selection is sent for that plain key.
-	if cert, _ := AsCertificate(pk); cert != nil && cert.Key.Type() == ssh.KeyAlgoRSA {
+	if cert, _ := unwrapCertificate(pk); cert != nil && cert.Key.Type() == ssh.KeyAlgoRSA {
 		for _, s := range signers {
 			if !PublicKeyEqual(cert.Key, s.PublicKey()) {
 				continue

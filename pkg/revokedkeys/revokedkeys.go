@@ -154,7 +154,7 @@ func (l *List) KRLs() int {
 // their certificates. ca reports that the entry revoked the CA key itself.
 // It returns an error if pk is a certificate that does not parse.
 func (l *List) Revoked(pk ssh.PublicKey) (key *Key, ca bool, err error) {
-	cert, err := sshsig.AsCertificate(pk)
+	cert, err := sshsig.CertificateDetails(pk)
 	if err != nil {
 		return nil, false, err
 	}
@@ -163,10 +163,16 @@ func (l *List) Revoked(pk ssh.PublicKey) (key *Key, ca bool, err error) {
 	if cert != nil {
 		subject = cert.Key
 		if cert.SignatureKey != nil {
-			authority = plain(cert.SignatureKey)
+			authority, err = sshsig.PlainPublicKeyBlob(cert.SignatureKey)
+			if err != nil {
+				return nil, false, err
+			}
 		}
 	}
-	signer := subject.Marshal()
+	signer, err := sshsig.PlainPublicKeyBlob(subject)
+	if err != nil {
+		return nil, false, err
+	}
 	offset := 0
 	for _, binary := range l.krls {
 		end := max(offset, min(binary.keyIndex, len(l.Keys)))

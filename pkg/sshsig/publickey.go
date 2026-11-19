@@ -11,24 +11,50 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
+	"pxy.se/go/ssh-sign/internal/helper"
 )
 
 // PublicKeyEqual checks if two public keys are the same.
 func PublicKeyEqual(pk1, pk2 ssh.PublicKey) bool {
-	return bytes.Equal(pk1.Marshal(), pk2.Marshal())
+	return bytes.Equal(publicKeyEncoding(pk1), publicKeyEncoding(pk2))
+}
+
+// PublicKeyMatcher captures pk's encoding for comparisons with multiple keys.
+func PublicKeyMatcher(pk ssh.PublicKey) func(ssh.PublicKey) bool {
+	// Marshal may return the key's own bytes, as agent.Key does.
+	blob := bytes.Clone(publicKeyEncoding(pk))
+	return func(other ssh.PublicKey) bool {
+		return bytes.Equal(blob, publicKeyEncoding(other))
+	}
+}
+
+// publicKeyEncoding may return shared bytes. Its callers must not mutate them.
+func publicKeyEncoding(pk ssh.PublicKey) []byte {
+	pk = encodable(pk)
+	if key, ok := pk.(*Certificate); ok {
+		return key.blob
+	}
+	return pk.Marshal()
 }
 
 // PlainPublicKeyBlob returns the wire form of pk or of its certificate subject.
 func PlainPublicKeyBlob(pk ssh.PublicKey) ([]byte, error) {
-	if key, ok := pk.(*certificateKey); ok {
+	if key, ok := pk.(*Certificate); ok {
 		return key.cert.Key.Marshal(), nil
 	}
-	cert, err := AsCertificate(pk)
+	cert, err := CertificateDetails(pk)
 	if err != nil {
 		return nil, err
 	}
 	if cert != nil {
 		pk = cert.Key
+	}
+	if pk == nil {
+		return nil, fmt.Errorf("a public key is required")
+	}
+	pk, err = normalizeSecurityKeyApplication(pk)
+	if err != nil {
+		return nil, err
 	}
 	return pk.Marshal(), nil
 }
@@ -102,15 +128,15 @@ func ParsePublicKeyBlob(blob []byte) (ssh.PublicKey, error) {
 
 // certificateSigned rejects a certificate the CA did not sign, like ssh-keygen.
 func certificateSigned(pk ssh.PublicKey) error {
-	if cert, _ := AsCertificate(pk); cert != nil {
-		return certificateSignatureValid(pk, cert)
+	if key, ok := pk.(*Certificate); ok {
+		return key.signatureValid()
 	}
 	return nil
 }
 
 // PublicKeyString converts a public key to its authorized_keys format.
 func PublicKeyString(pk ssh.PublicKey) string {
-	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pk)))
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(encodable(pk))))
 }
 
 // PublicKeyInfo is a human-readable representation of a ssh.PublicKey.
@@ -123,6 +149,7 @@ type PublicKeyInfo struct {
 
 // NewPublicKeyInfo populates a new PublicKeyInfo.
 func NewPublicKeyInfo(pk ssh.PublicKey) PublicKeyInfo {
+	pk = encodable(pk)
 	return PublicKeyInfo{
 		Format:      pk.Type(),
 		Blob:        base64.StdEncoding.EncodeToString(pk.Marshal()),
@@ -133,19 +160,30 @@ func NewPublicKeyInfo(pk ssh.PublicKey) PublicKeyInfo {
 
 // securityKeyApplication reads the application embedded in a FIDO public key.
 func securityKeyApplication(pk ssh.PublicKey) *string {
-	if cert, _ := AsCertificate(pk); cert != nil {
+	if cert, _ := unwrapCertificate(pk); cert != nil {
 		pk = cert.Key
 	}
-	switch pk.Type() {
+	keyType := pk.Type()
+	if !isSecurityKey(keyType) {
+		return nil
+	}
+	application, err := readSecurityKeyApplication(keyType, pk.Marshal())
+	if err != nil {
+		return nil
+	}
+	return &application
+}
+
+func readSecurityKeyApplication(keyType string, blob []byte) (string, error) {
+	switch keyType {
 	case ssh.KeyAlgoSKED25519:
 		var wire struct {
 			Name        string
 			Key         []byte
 			Application string
 		}
-		if ssh.Unmarshal(pk.Marshal(), &wire) == nil {
-			return &wire.Application
-		}
+		err := ssh.Unmarshal(blob, &wire)
+		return wire.Application, err
 	case ssh.KeyAlgoSKECDSA256:
 		var wire struct {
 			Name        string
@@ -153,9 +191,32 @@ func securityKeyApplication(pk ssh.PublicKey) *string {
 			Key         []byte
 			Application string
 		}
-		if ssh.Unmarshal(pk.Marshal(), &wire) == nil {
-			return &wire.Application
-		}
+		err := ssh.Unmarshal(blob, &wire)
+		return wire.Application, err
 	}
-	return nil
+	return "", fmt.Errorf("unsupported security key type %q", keyType)
+}
+
+// normalizeSecurityKeyApplication gives FIDO keys the same application and
+// plain key encoding that OpenSSH uses for verification and revocation.
+func normalizeSecurityKeyApplication(pk ssh.PublicKey) (ssh.PublicKey, error) {
+	keyType := pk.Type()
+	if !isSecurityKey(keyType) {
+		return pk, nil
+	}
+	blob := pk.Marshal()
+	application, err := readSecurityKeyApplication(keyType, blob)
+	if err != nil {
+		return nil, err
+	}
+	if !helper.ValidCString(application) {
+		return nil, fmt.Errorf("security key application contains a NUL byte")
+	}
+	normalized := helper.CString(application)
+	if normalized == application {
+		return pk, nil
+	}
+	// The application is the final SSH string in both security key formats.
+	prefix := blob[:len(blob)-4-len(application)]
+	return ssh.ParsePublicKey(append(bytes.Clone(prefix), ssh.Marshal(struct{ Application string }{normalized})...))
 }

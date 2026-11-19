@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // KeyAlgoMLDSA44Ed25519 is the hybrid post-quantum key type added in OpenSSH
@@ -100,8 +101,35 @@ func (k *mldsa44Ed25519Key) Verify(data []byte, sig *ssh.Signature) error {
 }
 
 // parsePublicKeyBlob extends ssh.ParsePublicKey with the key types x/crypto
-// does not know.
+// does not know, and rejects certificates OpenSSH cannot parse.
 func parsePublicKeyBlob(in []byte) (ssh.PublicKey, error) {
+	pk, err := parseAnyPublicKeyBlob(in)
+	if err != nil {
+		return nil, err
+	}
+	var cert *ssh.Certificate
+	switch key := pk.(type) {
+	case *ssh.Certificate:
+		cert = key
+	case *Certificate:
+		cert = key.cert
+	}
+	if cert == nil {
+		return normalizeSecurityKeyApplication(pk)
+	}
+	if err := checkCertificateFields(cert); err != nil {
+		return nil, err
+	}
+	if cert.Key, err = normalizeSecurityKeyApplication(cert.Key); err != nil {
+		return nil, err
+	}
+	if cert.SignatureKey, err = normalizeSecurityKeyApplication(cert.SignatureKey); err != nil {
+		return nil, err
+	}
+	return pk, nil
+}
+
+func parseAnyPublicKeyBlob(in []byte) (ssh.PublicKey, error) {
 	var name struct {
 		Name string
 		Rest []byte `ssh:"rest"`
@@ -111,16 +139,36 @@ func parsePublicKeyBlob(in []byte) (ssh.PublicKey, error) {
 		case KeyAlgoMLDSA44Ed25519:
 			return parseMLDSA44Ed25519Key(in)
 		case mldsa44Ed25519CertAlgo:
-			return nil, fmt.Errorf("ssh: %s certificates are not supported", KeyAlgoMLDSA44Ed25519)
+			cert, err := parseCertificateWithMLDSA(in)
+			if err != nil {
+				return nil, err
+			}
+			return cert, nil
 		}
 	}
-	return ssh.ParsePublicKey(in)
+	pk, err := ssh.ParsePublicKey(in)
+	if err != nil && isCertificateType(name.Name) {
+		// The standard parser cannot parse an ML-DSA CA key inside a certificate.
+		if cert, certErr := parseCertificateWithMLDSA(in); certErr == nil {
+			return cert, nil
+		}
+	}
+	return pk, err
 }
 
 // verifiablePublicKey swaps a key x/crypto cannot verify with, such as an
-// agent listing, for the parsed one. Other keys stay as received, since
-// re-encoding a certificate may change its bytes.
+// agent listing, for the parsed one. Parsing an agent certificate preserves
+// the received encoding.
 func verifiablePublicKey(pk ssh.PublicKey) (ssh.PublicKey, error) {
+	if _, ok := pk.(*ssh.Certificate); ok {
+		if key, ok := encodable(pk).(*encodedMLDSACertificate); ok {
+			return parseKeyBlob(key.blob)
+		}
+		return pk, nil
+	}
+	if _, ok := pk.(*agent.Key); ok && isCertificateType(pk.Type()) {
+		return parseKeyBlob(pk.Marshal())
+	}
 	if _, ok := pk.(*mldsa44Ed25519Key); ok || pk.Type() != KeyAlgoMLDSA44Ed25519 {
 		return pk, nil
 	}

@@ -172,7 +172,7 @@ func TestCheckReportsBothAKeyMismatchAndACertificateProblem(t *testing.T) {
 	}
 }
 
-// check -K skips certificate validity along with signer authentication.
+// check -K skips the certificate validity window along with signer authentication.
 func TestCheckAcceptsAnExpiredCertificateWithoutAuthKey(t *testing.T) {
 	const day = 24 * 60 * 60
 	expired := signWithCertificate(t, 0, uint64(time.Now().Unix()-day))

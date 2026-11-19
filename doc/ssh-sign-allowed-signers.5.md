@@ -175,6 +175,10 @@ not patterns. Without `-p`, at least one certificate principal must match the
 entry's patterns, and those principals are reported. The CA key must be a
 plain key, not a certificate.
 
+Supported CA keys include `ssh-ed25519`, `ssh-rsa`, `ecdsa-sha2-nistp256`
+and the hybrid `ssh-mldsa44-ed25519`. A hybrid subject key appears in a user
+certificate as `ssh-mldsa44-ed25519-cert`.
+
 
 ## Comment
 

@@ -195,3 +195,35 @@ func TestParseBytesReadsKRLInPlace(t *testing.T) {
 		t.Errorf("ParseBytes() allocated %d bytes for a %d byte KRL", allocated, len(data))
 	}
 }
+
+func TestParseBytesDoesNotRetainInput(t *testing.T) {
+	pk := newSigner(t).PublicKey()
+	data := krlDocument(krlRecord(krlExplicitKeys, ssh.Marshal(struct{ Key []byte }{pk.Marshal()})))
+	list, err := ParseBytes(data, "buffered.krl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clear(data)
+	key, _, err := list.Revoked(pk)
+	if err != nil || key == nil || key.Source != "buffered.krl" {
+		t.Errorf("Revoked() = %v, %v, want a match from buffered.krl", key, err)
+	}
+}
+
+func TestRevokedFailsOnAConcreteCertificateWithoutAKey(t *testing.T) {
+	var l List
+	if _, _, err := l.Revoked(&ssh.Certificate{}); err == nil || err.Error() != "certificate has no key" {
+		t.Errorf("Revoked() error = %v, want a missing key error", err)
+	}
+}
+
+// OpenSSH cannot parse this key ID, so it must not match "cert".
+func TestRevokedFailsOnAConcreteCertificateWithANULKeyID(t *testing.T) {
+	cert := issue(t, newSigner(t), newSigner(t).PublicKey())
+	cert.KeyId = "cert\x00x"
+	data := krlDocument(krlCertRecord(krlRecord(krlKeyID, ssh.Marshal(struct{ ID string }{"cert"}))))
+	key, _, err := parse(t, string(data)).Revoked(cert)
+	if key != nil || err == nil || !strings.Contains(err.Error(), "NUL byte") {
+		t.Errorf("Revoked() = %+v, %v, want a NUL byte error", key, err)
+	}
+}
